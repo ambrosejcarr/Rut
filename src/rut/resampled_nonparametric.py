@@ -1,10 +1,8 @@
-import os
 from functools import partial
 from multiprocessing import Pool
 from contextlib import closing
 from itertools import repeat
 import numpy as np
-import numpy.ma as ma
 import pandas as pd
 from scipy.stats.mstats import count_tied_groups, rankdata
 from scipy.stats.mstats import kruskalwallis as _kruskalwallis
@@ -72,18 +70,18 @@ def find_sampling_value(group_data, percentile):
 def normalize(data, downsample_value, upsample=False, labels=None):
     """Normalize data such that each observation sums to downsample_value
 
-    This function has an important downstream interaction with _draw_sample. In draw sample, 
-    non-integer values are rounded probabilistically, such that integer outputs are produced
-    this has the effect of producing observations with very similar distributions to their 
-    down-sampled observations, but with more uncertainty associated with observations that 
-    have sparser sampling
+    This function has an important downstream interaction with _draw_sample. In draw
+    sample, non-integer values are rounded probabilistically, such that integer outputs
+    are produced this has the effect of producing observations with very similar
+    distributions to their down-sampled observations, but with more uncertainty
+    associated with observations that have sparser sampling
 
     :param np.ndarray data: array containing observations x features
     :param int downsample_value: value to normalize observation counts to. 
-    :param bool upsample: if False, all observations with size < downsample_value are excluded.
-       if True, those cells are upsampled to downsample_value.
+    :param bool upsample: if False, all observations with size < downsample_value are
+      excluded. If True, those observations are upsampled to downsample_value.
     :return np.ndarray: array containing observations x samples where rows sum to
-       downsample_value
+      downsample_value
     """
     obs_size = data.sum(axis=1)
     if not upsample:
@@ -113,18 +111,18 @@ def _draw_sample(normalized_data, n):
     return np.floor(sample) + (sample % 1 > p).astype(int)
 
 
-def _mw_sampling_function(norm_data, n_cell):
+def _mw_sampling_function(norm_data, n_observation):
     """Compute the Mann-Whitney U test on a single sample drawn from norm_data
     :param norm_data: normalized array containing observations from a column of x and 
        a column of y
-    :param n_cell: the number of cells to draw from x and y
+    :param n_observation: the number of observations to draw from x and y
 
     :return (int, float, float): U, z, p-value, the result of _mannwhitneyu called on a 
        single sample (see _mannwhitneyu for more information on the structure of this 
        output
     """
-    a, b = (_draw_sample(d, n_cell) for d in norm_data)
-    return _mannwhitneyu(a, b)  # dim = (n_genes, 3)
+    a, b = (_draw_sample(d, n_observation) for d in norm_data)
+    return _mannwhitneyu(a, b)  # dim = (n_features, 3)
 
 
 def confidence_interval(z):
@@ -141,24 +139,24 @@ def mannwhitneyu(
         upsample=False):
     """
     Compute a resampled Mann-Whitney U test between observations in each column (feature)
-    of x and y. n_iter samples will be drawn from x and y, selecting a number of cells
-    equal to the smaller of the two sets (array with smaller number of rows). all cells
-    will be downsampled to the sampling_percentile before comparison to guarantee equivalent
-    sampling.   
+    of x and y. n_iter samples will be drawn from x and y, selecting a number of
+    observations equal to the smaller of the two sets (array with smaller number of rows).
+    all observations will be downsampled to the sampling_percentile before comparison to
+    guarantee equivalent sampling.
 
     :param x: observations by features array or DataFrame (ndim must be 2, although there
-        needn't be more than one feature)
+      needn't be more than one feature)
     :param y: observations by features array or DataFrama. Features must be the same as x
     :param n_iter: number of times to sample x and y
     :param sampling_percentile: percentile to downsample to. observations with row sums
-        lower than this value will be excluded
+      lower than this value will be excluded
     :param alpha: significance threshold for FDR correction
-    :param verbose: if True, report number of cells sampled in each iteration and the
-        integer value to which cells are downsampled
-    :param upsample: if False, cells with size lower than sampling_percentile are
-        discarded. If True, those cells are upsampled.
+    :param verbose: if True, report number of observations sampled in each iteration and
+      the integer value to which observations are downsampled
+    :param upsample: if False, observations with size lower than sampling_percentile are
+      discarded. If True, those observations are upsampled.
 
-    :return pd.DataFrame: DataFrame with columns:
+    :return pd.DataFrame: DataFrame with columns corresponding to:
         U: median u-statistic over the n_iter iterations of the test
         z_approx: median approximate tie-corrected z-score for the mann-whitney U-test
         z_lo: lower bound, 95% confidence interval over z
@@ -182,12 +180,12 @@ def mannwhitneyu(
     # calculate sampling values
     v = find_sampling_value([x, y], sampling_percentile)
     norm_data = [normalize(d, v, upsample) for d in [x, y]]
-    n_cell = min(d.shape[0] for d in norm_data)
-    sampling_function = partial(_mw_sampling_function, n_cell=n_cell)
+    n_observation = min(d.shape[0] for d in norm_data)
+    sampling_function = partial(_mw_sampling_function, n_observation=n_observation)
 
     if verbose:  # report sampling values
-        print('sampling %d cells (with replacement) per iteration' % n_cell)
-        print('sampling %d molecules per cell' % v)
+        print('sampling %d observations (with replacement) per iteration' % n_observation)
+        print('sampling %d counts per observation' % v)
 
     with closing(Pool()) as pool:
         results = pool.map(sampling_function, repeat(norm_data, n_iter))
@@ -203,7 +201,7 @@ def mannwhitneyu(
     # add multiple-testing correction
     results['q'] = multipletests(results['p'], alpha=alpha, method='fdr_tsbh')[1]
 
-    # remove low-value genes whose median sampling value is -inf
+    # remove low-value features whose median sampling value is -inf
     neginf = np.isneginf(results['z_approx'])
     results.ix[neginf, 'z_lo'] = np.nan
     results.ix[neginf, 'z_approx'] = 0
@@ -215,40 +213,29 @@ def mannwhitneyu(
     return results
 
 
-def _kw_sampling_function(data, splits, n_cell):
+def _kw_sampling_function(data, splits, n_observation):
     """
-    Draw subsamples of the cells from each partition of the normalized data
+    Draw subsamples of the observations from each partition of the normalized data
 
     :param np.ndarray data: normalized and sorted np.ndarray to draw samples from
     :param np.ndarray splits: indices that separate groups contained in the rows
       of data
-    :param n_cell: number of cells to sample from each group 
+    :param n_observation: number of observations to sample from each group
 
     :return list: result of the kruskal test on a single sampling draw (see _kruskal
       for details on the structure of the output) 
     """
-    data = [_draw_sample(d, n_cell) for d in np.split(data, splits)]
+    data = [_draw_sample(d, n_observation) for d in np.split(data, splits)]
     return _kruskal(data)
 
 
 def _kruskal(data):
     """
     Compute the Kruskal-Wallis H-test for independent samples
-    Parameters
-    ----------
-    sample1, sample2, ... : array_like
-       Two or more arrays with the sample measurements can be given as
-       arguments.
-    Returns
-    -------
-    statistic : float
-       The Kruskal-Wallis H statistic, corrected for ties
-    pvalue : float
-       The p-value for the test using the assumption that H has a chi
-       square distribution
-    Notes
-    -----
-    For more details on `kruskal`, see `stats.kruskal`.
+
+    :param list data: list of lists of np.ndarrays to be submitted to kruskalwallis
+
+    :return list: list of (H, p) the kruskalwallis statistic and resulting p-value
     """
     results = []
     for i in np.arange(data[0].shape[1]):
@@ -274,25 +261,25 @@ def category_to_numeric(labels):
 def kruskalwallis(
         data, labels, n_iter=50, sampling_percentile=10, alpha=0.05, verbose=False,
         upsample=False):
-    """Compute a resampled Kruskal-wallis H-test for independent samples
+    """Compute a resampled Kruskal-Wallis H-test for independent samples
 
     :param data: np.ndarray or pd.DataFrame of observations x features
     :param labels: observation labels for categories to be compared
     :param n_iter: number of times to sample x and y
     :param sampling_percentile: percentile to downsample to. observations with row sums
-        lower than this value will be excluded
+      lower than this value will be excluded
     :param alpha: significance threshold for FDR correction
-    :param verbose: if True, report number of cells sampled in each iteration and the
-        integer value to which cells are downsampled
-    :param upsample: if False, cells with size lower than sampling_percentile are
-        discarded. If True, those cells are upsampled.
+    :param verbose: if True, report number of observations sampled in each iteration and
+      the integer value to which observations are downsampled
+    :param upsample: if False, observations with size lower than sampling_percentile are
+      discarded. If True, those observations are upsampled.
     :return pd.DataFrame: DataFrame with columns:
-        H: median u-statistic over the n_iter iterations of the test
-        z_approx: median approximate tie-corrected z-score for the mann-whitney U-test
-        z_lo: lower bound, 95% confidence interval over z
-        z_hi: upper bound, 95% confidence interval over z
-        p: p-value for z_approx
-        q: FDR-corrected q-value over all tests in output, using two-stage BH-FDR.
+      H: median u-statistic over the n_iter iterations of the test
+      z_approx: median approximate tie-corrected z-score for the mann-whitney U-test
+      z_lo: lower bound, 95% confidence interval over z
+      z_hi: upper bound, 95% confidence interval over z
+      p: p-value for z_approx
+      q: FDR-corrected q-value over all tests in output, using two-stage BH-FDR.
     """
 
     if isinstance(data, pd.DataFrame):
@@ -322,12 +309,13 @@ def kruskalwallis(
 
     splits = np.where(np.diff(labels))[0] + 1  # rediff, norm_data causes loss
 
-    n_cell = min(d.shape[0] for d in np.split(norm_data, splits))
-    sampling_function = partial(_kw_sampling_function, n_cell=n_cell, splits=splits)
+    n_observation = min(d.shape[0] for d in np.split(norm_data, splits))
+    sampling_function = partial(_kw_sampling_function, n_observation=n_observation,
+                                splits=splits)
 
     if verbose:  # report sampling values
-        print('sampling %d cells (with replacement) per iteration' % n_cell)
-        print('sampling %d molecules per cell' % v)
+        print('sampling %d observations (with replacement) per iteration' % n_observation)
+        print('sampling %d counts per observation' % v)
 
     with closing(Pool()) as pool:
         results = pool.map(sampling_function, repeat(norm_data, n_iter))
@@ -343,5 +331,3 @@ def kruskalwallis(
     results['q'] = multipletests(results['p'], alpha=alpha, method='fdr_tsbh')[1]
     results = results[['H', 'H_lo', 'H_hi', 'p', 'q']]
     return results
-
-
