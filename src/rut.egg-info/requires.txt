@@ -1,4 +1,0 @@
-numpy
-pandas>=0.18.1
-scipy>=0.14.0
-statsmodels
