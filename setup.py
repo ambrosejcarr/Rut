@@ -15,8 +15,8 @@ with open('src/rut/version.py') as f:
 
 setup(name='rut',
       version=__version__,  # read in from the exec of version.py; ignore error
-      description=('Resampled non-parametric tests for distributions with unequal sampling'
-                   'and variance'),
+      description=('Resampled non-parametric tests for distributions with unequal '
+                   'sampling and variance'),
       author='Ambrose J. Carr',
       author_email='mail@ambrosejcarr.com',
       package_dir={'': 'src'},
@@ -25,6 +25,7 @@ setup(name='rut',
           'numpy',
           'pandas>=0.18.1',
           'scipy>=0.14.0',
-          'statsmodels'],
+          'statsmodels',
+          'nose2'],
       )
 

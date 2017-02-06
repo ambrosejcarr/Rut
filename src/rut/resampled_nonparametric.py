@@ -29,6 +29,8 @@ def _mannwhitneyu(x, y, use_continuity=True):
       pvalue : float
         Approximate p-value assuming a normal distribution.
     """
+
+    # calculate U for n1
     if x.ndim == 1 and y.ndim == 1:
         x, y = x[:, np.newaxis], y[:, np.newaxis]
     ranks = rankdata(np.concatenate([x, y]), axis=0)
@@ -36,8 +38,11 @@ def _mannwhitneyu(x, y, use_continuity=True):
     nt = nx + ny
     U = ranks[:nx].sum(0) - nx * (nx + 1) / 2.
 
+    # get mean value
     mu = (nx * ny) / 2.
-    u = np.amin([U, nx*ny - U], axis=0)  # get smaller U by convention
+
+    # get smaller u (convention) for reporting only
+    u = np.amin([U, nx*ny - U], axis=0)
 
     sigsq = np.ones(ranks.shape[1]) * (nt ** 3 - nt) / 12.
 
@@ -47,9 +52,9 @@ def _mannwhitneyu(x, y, use_continuity=True):
     sigsq *= nx * ny / float(nt * (nt - 1))
 
     if use_continuity:
-        z = (U - 1 / 2. - mu) / np.sqrt(sigsq)
+        z = -(U - 1 / 2. - mu) / np.sqrt(sigsq)
     else:
-        z = (U - mu) / np.sqrt(sigsq)
+        z = -(U - mu) / np.sqrt(sigsq)
 
     prob = erfc(abs(z) / np.sqrt(2))
     return np.vstack([u, z, prob]).T
