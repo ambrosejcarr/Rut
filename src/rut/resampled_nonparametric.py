@@ -52,9 +52,9 @@ def _mannwhitneyu(x, y, use_continuity=True):
     sigsq *= nx * ny / float(nt * (nt - 1))
 
     if use_continuity:
-        z = -(U - 1 / 2. - mu) / np.sqrt(sigsq)
+        z = (U - 1 / 2. - mu) / np.sqrt(sigsq)
     else:
-        z = -(U - mu) / np.sqrt(sigsq)
+        z = (U - mu) / np.sqrt(sigsq)
 
     prob = erfc(abs(z) / np.sqrt(2))
     return np.vstack([u, z, prob]).T
