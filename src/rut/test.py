@@ -30,7 +30,7 @@ class TestMannWhitneyU(unittest.TestCase):
         pass
 
     def test_mannwhitneyu(self):
-        pass
+        mannwhitneyu(self.x1, self.x2)
 
 
 if __name__ == '__main__':

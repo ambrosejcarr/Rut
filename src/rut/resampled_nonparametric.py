@@ -141,7 +141,7 @@ def confidence_interval(z):
 
 def mannwhitneyu(
         x, y, n_iter=50, sampling_percentile=10, alpha=0.05, verbose=False,
-        upsample=False):
+        upsample=False, max_obs_per_sample=500):
     """
     Compute a resampled Mann-Whitney U test between observations in each column (feature)
     of x and y. n_iter samples will be drawn from x and y, selecting a number of
@@ -160,6 +160,8 @@ def mannwhitneyu(
       the integer value to which observations are downsampled
     :param upsample: if False, observations with size lower than sampling_percentile are
       discarded. If True, those observations are upsampled.
+    :param int max_obs_per_sample: Maximum number of observations to use in each sample
+      useful to set ceiling on memory usage. Default=500
 
     :return pd.DataFrame: DataFrame with columns corresponding to:
         U: median u-statistic over the n_iter iterations of the test
@@ -186,6 +188,7 @@ def mannwhitneyu(
     v = find_sampling_value([x, y], sampling_percentile)
     norm_data = [normalize(d, v, upsample) for d in [x, y]]
     n_observation = min(d.shape[0] for d in norm_data)
+    n_observation = min(n_observation, max_obs_per_sample)  # check obs ceiling from param
     sampling_function = partial(_mw_sampling_function, n_observation=n_observation)
 
     if verbose:  # report sampling values
