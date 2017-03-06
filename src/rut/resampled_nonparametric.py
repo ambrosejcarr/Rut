@@ -141,7 +141,8 @@ def confidence_interval(z):
 
 def mannwhitneyu(
         x, y, n_iter=50, sampling_percentile=10, alpha=0.05, verbose=False,
-        upsample=False, max_obs_per_sample=500):
+        upsample=False, max_obs_per_sample=500, report_z_distributions=False,
+        report_mu_distributions=False):
     """
     Compute a resampled Mann-Whitney U test between observations in each column (feature)
     of x and y. n_iter samples will be drawn from x and y, selecting a number of
@@ -162,6 +163,10 @@ def mannwhitneyu(
       discarded. If True, those observations are upsampled.
     :param int max_obs_per_sample: Maximum number of observations to use in each sample
       useful to set ceiling on memory usage. Default=500
+    :param bool report_z_distributions: if True, a second dataframe of shape n genes x p
+      iterations with entries equal to the number of iterations will be reported
+    :param bool report_mu_distributions: if True, a second dataframe of shape n genes x p iterations x 2
+      will be returned which contains the mean of the ranks of each gene in each iteration.
 
     :return pd.DataFrame: DataFrame with columns corresponding to:
         U: median u-statistic over the n_iter iterations of the test
@@ -198,9 +203,19 @@ def mannwhitneyu(
     with closing(Pool()) as pool:
         results = pool.map(sampling_function, repeat(norm_data, n_iter))
 
-    results = np.stack(results)  # u, z, p
+    # todo remove overwriting of results
+    results = np.stack(results)  # (u, z, p) x n_iter
 
     ci = confidence_interval(results[:, :, 1])
+
+    # todo add this to a results object
+    if report_z_distributions:
+        zdist = pd.DataFrame(
+            data=results[:, :, 1].T,
+            index=labels,
+        )
+        zdist.columns.name = 'iteration number'
+
     results = pd.DataFrame(
         data=np.concatenate([np.median(results, axis=0), ci], axis=1),
         index=labels,
@@ -218,7 +233,10 @@ def mannwhitneyu(
     results = results[['U', 'z_approx', 'z_lo', 'z_hi', 'p', 'q']].sort_values('q')
     results.iloc[:, 1:4] = np.round(results.iloc[:, 1:4], 2)
 
-    return results
+    if report_z_distributions:
+        return results, zdist
+    else:
+        return results
 
 
 def _kw_sampling_function(data, splits, n_observation):
