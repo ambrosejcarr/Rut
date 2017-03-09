@@ -142,7 +142,7 @@ def confidence_interval(z):
 def mannwhitneyu(
         x, y, n_iter=50, sampling_percentile=10, alpha=0.05, verbose=False,
         upsample=False, max_obs_per_sample=500, report_z_distributions=False,
-        report_mu_distributions=False):
+        expected_value_function=np.median):
     """
     Compute a resampled Mann-Whitney U test between observations in each column (feature)
     of x and y. n_iter samples will be drawn from x and y, selecting a number of
@@ -150,23 +150,24 @@ def mannwhitneyu(
     all observations will be downsampled to the sampling_percentile before comparison to
     guarantee equivalent sampling.
 
-    :param x: observations by features array or DataFrame (ndim must be 2, although there
-      needn't be more than one feature)
-    :param y: observations by features array or DataFrama. Features must be the same as x
-    :param n_iter: number of times to sample x and y
-    :param sampling_percentile: percentile to downsample to. observations with row sums
+    :param pd.DataFrame | np.ndarray x: observations by features array or DataFrame
+      (n-dim must be 2, although there needn't be more than one feature)
+    :param pd.DataFrame | np.ndarray y: observations by features array or DataFrame.
+      Features must be the same as x
+    :param int n_iter: number of times to sample x and y
+    :param int sampling_percentile: percentile to down-sample to. observations with row sums
       lower than this value will be excluded
-    :param alpha: significance threshold for FDR correction
-    :param verbose: if True, report number of observations sampled in each iteration and
-      the integer value to which observations are downsampled
-    :param upsample: if False, observations with size lower than sampling_percentile are
-      discarded. If True, those observations are upsampled.
+    :param float alpha: significance threshold for FDR correction
+    :param bool verbose: if True, report number of observations sampled in each iteration and
+      the integer value to which observations are down-sampled
+    :param bool upsample: if False, observations with size lower than sampling_percentile are
+      discarded. If True, those observations are up-sampled.
     :param int max_obs_per_sample: Maximum number of observations to use in each sample
       useful to set ceiling on memory usage. Default=500
-    :param bool report_z_distributions: if True, a second dataframe of shape n genes x p
+    :param bool report_z_distributions: if True, a second DataFrame of shape n genes x p
       iterations with entries equal to the number of iterations will be reported
-    :param bool report_mu_distributions: if True, a second dataframe of shape n genes x p iterations x 2
-      will be returned which contains the mean of the ranks of each gene in each iteration.
+    :param function expected_value_function: function to extract the expected value from a
+      list of values. Default = np.median, but np.mean may also be used.
 
     :return pd.DataFrame: DataFrame with columns corresponding to:
         U: median u-statistic over the n_iter iterations of the test
@@ -208,7 +209,6 @@ def mannwhitneyu(
 
     ci = confidence_interval(results[:, :, 1])
 
-    # todo add this to a results object
     if report_z_distributions:
         zdist = pd.DataFrame(
             data=results[:, :, 1].T,
@@ -217,7 +217,7 @@ def mannwhitneyu(
         zdist.columns.name = 'iteration number'
 
     results = pd.DataFrame(
-        data=np.concatenate([np.median(results, axis=0), ci], axis=1),
+        data=np.concatenate([expected_value_function(results, axis=0), ci], axis=1),
         index=labels,
         columns=['U', 'z_approx', 'p', 'z_lo', 'z_hi'])
 
