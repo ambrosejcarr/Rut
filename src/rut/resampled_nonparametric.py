@@ -52,9 +52,15 @@ def _mannwhitneyu(x, y, use_continuity=True):
     sigsq *= nx * ny / float(nt * (nt - 1))
 
     if use_continuity:
+        # note that in the case that sigsq is zero, and mu=U, this line will produce
+        # -inf. However, this z-score should be zero, as this is an artifact of
+        # continuity correction
         z = (U - 1 / 2. - mu) / np.sqrt(sigsq)
     else:
         z = (U - mu) / np.sqrt(sigsq)
+
+    # correct infs
+    z[sigsq == 0] = 0
 
     prob = erfc(abs(z) / np.sqrt(2))
     return np.vstack([u, z, prob]).T
@@ -204,7 +210,7 @@ def mannwhitneyu(
     with closing(Pool()) as pool:
         results = pool.map(sampling_function, repeat(norm_data, n_iter))
 
-    # todo remove overwriting of results
+    # todo examine memory impact of removing overwriting of results (reason: clarity)
     results = np.stack(results)  # (u, z, p) x n_iter
 
     ci = confidence_interval(results[:, :, 1])
@@ -223,12 +229,6 @@ def mannwhitneyu(
 
     # add multiple-testing correction
     results['q'] = multipletests(results['p'], alpha=alpha, method='fdr_tsbh')[1]
-
-    # remove low-value features whose median sampling value is -inf
-    neginf = np.isneginf(results['z_approx'])
-    results.ix[neginf, 'z_lo'] = np.nan
-    results.ix[neginf, 'z_approx'] = 0
-    results.ix[neginf, ['p', 'q']] = 1.
 
     results = results[['U', 'z_approx', 'z_lo', 'z_hi', 'p', 'q']].sort_values('q')
     results.iloc[:, 1:4] = np.round(results.iloc[:, 1:4], 2)
