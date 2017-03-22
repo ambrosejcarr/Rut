@@ -349,8 +349,17 @@ def kruskalwallis(
         print('sampling %d observations (with replacement) per iteration' % n_observation)
         print('sampling %d counts per observation' % v)
 
+    # draw samples and shunt them to the kruskal test to save memory overhead (3s sampling vs 40s kruskal)
+    # create an iterator to draw samples
+    split_data = np.split(data, splits)
+    sampling_iterator = ([_draw_sample(d, n_observation) for d in split_data] for _ in np.arange(n_iter))
+
+    # consume iterator with imap_unordered
     with closing(Pool()) as pool:
-        results = pool.map(sampling_function, repeat(norm_data, n_iter))
+        results = pool.imap_unordered(_kruskal, sampling_iterator)
+
+    # with closing(Pool()) as pool:
+    #     results = pool.map(sampling_function, repeat(norm_data, n_iter))
 
     results = np.stack(results)  # H, p
 
