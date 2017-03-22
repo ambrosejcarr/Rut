@@ -115,10 +115,12 @@ def _draw_sample(normalized_data, n):
     :return np.ndarray: n x features array
     """
     np.random.seed()
+    # select cells
     idx = np.random.randint(0, normalized_data.shape[0], n)
     sample = normalized_data[idx, :]
-    p = np.random.sample(sample.shape)  # round samples probabilistically
 
+    # get random floats in [0., 1.) to round samples probabilistically
+    p = np.random.sample(sample.shape)
     return np.floor(sample) + (sample % 1 > p).astype(int)
 
 
