@@ -286,7 +286,7 @@ def category_to_numeric(labels):
 
 def kruskalwallis(
         data, labels, n_iter=50, sampling_percentile=10, alpha=0.05, verbose=False,
-        upsample=False):
+        upsample=False, max_obs_per_sample=500):
     """Compute a resampled Kruskal-Wallis H-test for independent samples
 
     :param data: np.ndarray or pd.DataFrame of observations x features
@@ -298,7 +298,9 @@ def kruskalwallis(
     :param verbose: if True, report number of observations sampled in each iteration and
       the integer value to which observations are downsampled
     :param upsample: if False, observations with size lower than sampling_percentile are
-      discarded. If True, those observations are upsampled.
+      discarded. If True, those observations are upsampled (Not recommended).
+    :param int max_obs_per_sample: Maximum number of observations to use in each sample
+      useful to set ceiling on memory usage. Default=500
     :return pd.DataFrame: DataFrame with columns:
       H: median u-statistic over the n_iter iterations of the test
       z_approx: median approximate tie-corrected z-score for the mann-whitney U-test
@@ -336,6 +338,8 @@ def kruskalwallis(
     splits = np.where(np.diff(labels))[0] + 1  # rediff, norm_data causes loss
 
     n_observation = min(d.shape[0] for d in np.split(norm_data, splits))
+    n_observation = min(n_observation, max_obs_per_sample)  # check obs ceiling from param
+
     sampling_function = partial(_kw_sampling_function, n_observation=n_observation,
                                 splits=splits)
 
