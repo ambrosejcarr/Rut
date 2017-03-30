@@ -150,7 +150,7 @@ def confidence_interval(z):
 def mannwhitneyu(
         x, y, n_iter=50, sampling_percentile=10, alpha=0.05, verbose=False,
         upsample=False, max_obs_per_sample=500, report_z_distributions=False,
-        expected_value_function=np.median):
+        expected_value_function=np.median, processes=None):
     """
     Compute a resampled Mann-Whitney U test between observations in each column (feature)
     of x and y. n_iter samples will be drawn from x and y, selecting a number of
@@ -176,6 +176,8 @@ def mannwhitneyu(
       iterations with entries equal to the number of iterations will be reported
     :param function expected_value_function: function to extract the expected value from a
       list of values. Default = np.median, but np.mean may also be used.
+    :param int processes: Specify the number of processes to spawn. if not None, uses the
+      maximum number of cores on your computer.
 
     :return pd.DataFrame: DataFrame with columns corresponding to:
         U: median u-statistic over the n_iter iterations of the test
@@ -209,7 +211,7 @@ def mannwhitneyu(
         print('sampling %d observations (with replacement) per iteration' % n_observation)
         print('sampling %d counts per observation' % v)
 
-    with closing(Pool()) as pool:
+    with closing(Pool(processes=processes)) as pool:
         results = pool.map(sampling_function, repeat(norm_data, n_iter))
 
     # todo examine memory impact of removing overwriting of results (reason: clarity)
@@ -288,7 +290,7 @@ def category_to_numeric(labels):
 
 def kruskalwallis(
         data, labels, n_iter=50, sampling_percentile=10, alpha=0.05, verbose=False,
-        upsample=False, max_obs_per_sample=500):
+        upsample=False, max_obs_per_sample=500, processes=None):
     """Compute a resampled Kruskal-Wallis H-test for independent samples
 
     :param data: np.ndarray or pd.DataFrame of observations x features
@@ -303,6 +305,10 @@ def kruskalwallis(
       discarded. If True, those observations are upsampled (Not recommended).
     :param int max_obs_per_sample: Maximum number of observations to use in each sample
       useful to set ceiling on memory usage. Default=500
+    :param int processes: Specify the number of processes to spawn. if not None, uses the
+      maximum number of cores on your computer.
+
+
     :return pd.DataFrame: DataFrame with columns:
       H: median u-statistic over the n_iter iterations of the test
       z_approx: median approximate tie-corrected z-score for the mann-whitney U-test
@@ -355,7 +361,7 @@ def kruskalwallis(
     sampling_iterator = ([_draw_sample(d, n_observation) for d in split_data] for _ in np.arange(n_iter))
 
     # consume iterator with imap_unordered
-    with closing(Pool()) as pool:
+    with closing(Pool(processes=processes)) as pool:
         results = pool.imap_unordered(_kruskal, sampling_iterator)
 
     # with closing(Pool()) as pool:
