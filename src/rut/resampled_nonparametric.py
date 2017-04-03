@@ -62,8 +62,17 @@ def _mannwhitneyu(x, y, use_continuity=True):
     # correct infs
     z[sigsq == 0] = 0
 
-    prob = erfc(abs(z) / np.sqrt(2))
+    prob = z_to_p(z)
     return np.vstack([u, z, prob]).T
+
+
+def z_to_p(z):
+    """convert a z-score to a p-value
+
+    :param np.ndarray | pd.DataFrame z: array of z-scores
+    :return np.ndarray | pd.DataFrame: array of p-values in same shape as input data
+    """
+    return erfc(abs(z) / np.sqrt(2))
 
 
 def find_sampling_value(group_data, percentile):
