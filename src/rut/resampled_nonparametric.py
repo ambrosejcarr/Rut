@@ -378,3 +378,22 @@ def kruskalwallis(
     results['q'] = multipletests(results['p'], alpha=alpha, method='fdr_tsbh')[1]
     results = results[['H', 'H_lo', 'H_hi', 'p', 'q']]
     return results
+
+
+def save_result(result_object, filename):
+    """save a rut results object to file
+
+    :param pd.DataFrame result_object: output of mannwhitneyu or kruskalwallis
+    :param str filename: filename for saved object
+    :return None: saves the data to file
+    """
+    result_object.to_csv(filename)
+
+
+def load_result(filename):
+    """load a rut results object from file
+
+    :param str filename: name of the saved results objects
+    :return pd.DataFrame: loaded results object
+    """
+    return pd.read_csv(filename, index_col=0, header=0)
