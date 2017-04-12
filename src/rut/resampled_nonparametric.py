@@ -1,3 +1,4 @@
+import warnings
 from functools import partial
 from multiprocessing import Pool
 from contextlib import closing
@@ -51,13 +52,16 @@ def _mannwhitneyu(x, y, use_continuity=True):
         sigsq[i] -= np.sum(v * (k ** 3 - k) for (k, v) in ties.items()) / 12.
     sigsq *= nx * ny / float(nt * (nt - 1))
 
-    if use_continuity:
-        # note that in the case that sigsq is zero, and mu=U, this line will produce
-        # -inf. However, this z-score should be zero, as this is an artifact of
-        # continuity correction
-        z = (U - 1 / 2. - mu) / np.sqrt(sigsq)
-    else:
-        z = (U - mu) / np.sqrt(sigsq)
+    # ignore division by zero warnings; they are properly dealt with by this test.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        if use_continuity:
+            # note that in the case that sigsq is zero, and mu=U, this line will produce
+            # -inf. However, this z-score should be zero, as this is an artifact of
+            # continuity correction
+            z = (U - 1 / 2. - mu) / np.sqrt(sigsq)
+        else:
+            z = (U - mu) / np.sqrt(sigsq)
 
     # correct infs
     z[sigsq == 0] = 0
@@ -116,10 +120,11 @@ def normalize(data, downsample_value, upsample=False, labels=None):
         return norm
 
 
-def _draw_sample(normalized_data, n):
+def _draw_sample(normalized_data, n, return_indices=False):
     """Randomly sample n normalized observations from normalized_data
     :param np.ndarray normalized_data: normalized observations x features matrix
     :param int n: number of observations to draw from normalized_data
+    :param bool return_indices: if True, indices of sampled cells will also be returned
 
     :return np.ndarray: n x features array
     """
@@ -130,7 +135,11 @@ def _draw_sample(normalized_data, n):
 
     # get random floats in [0., 1.) to round samples probabilistically
     p = np.random.sample(sample.shape)
-    return np.floor(sample) + (sample % 1 > p).astype(int)
+    sample = np.floor(sample) + (sample % 1 > p).astype(int)
+    if return_indices:
+        return sample, idx
+    else:
+        return sample
 
 
 def _mw_sampling_function(norm_data, n_observation):
