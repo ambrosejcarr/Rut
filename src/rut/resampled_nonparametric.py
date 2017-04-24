@@ -104,6 +104,9 @@ def normalize(data, downsample_value, upsample=False, labels=None):
     :param int downsample_value: value to normalize observation counts to. 
     :param bool upsample: if False, all observations with size < downsample_value are
       excluded. If True, those observations are upsampled to downsample_value.
+    :param np.ndarray labels: array or series of labels, useful to track which cells
+      are being discarded by exclusion of observations with sums below the downsampling
+      value
     :return np.ndarray: array containing observations x samples where rows sum to
       downsample_value
     """
@@ -122,7 +125,10 @@ def normalize(data, downsample_value, upsample=False, labels=None):
 
 def _draw_sample(normalized_data, n, return_indices=False):
     """Randomly sample n normalized observations from normalized_data
-    :param np.ndarray normalized_data: normalized observations x features matrix
+    :param np.ndarray normalized_data: normalized observations x features matrix. Note
+      that the sum of the features for each observation in this data determines the
+      total number of times the features are observed. Hence, this parameter cannot
+      be set in this function, but must be set by normalize()
     :param int n: number of observations to draw from normalized_data
     :param bool return_indices: if True, indices of sampled cells will also be returned
 
