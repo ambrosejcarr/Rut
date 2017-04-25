@@ -123,6 +123,12 @@ def normalize(data, downsample_value, upsample=False, labels=None):
         return norm
 
 
+def round_random(sample):
+    """round a sample probabilistically"""
+    p = np.random.sample(sample.shape)
+    return np.floor(sample) + (sample % 1 > p).astype(int)
+
+
 def _draw_sample(normalized_data, n, return_indices=False):
     """Randomly sample n normalized observations from normalized_data
     :param np.ndarray normalized_data: normalized observations x features matrix. Note
@@ -139,9 +145,7 @@ def _draw_sample(normalized_data, n, return_indices=False):
     idx = np.random.randint(0, normalized_data.shape[0], n)
     sample = normalized_data[idx, :]
 
-    # get random floats in [0., 1.) to round samples probabilistically
-    p = np.random.sample(sample.shape)
-    sample = np.floor(sample) + (sample % 1 > p).astype(int)
+    sample = round_random(sample)
     if return_indices:
         return sample, idx
     else:
