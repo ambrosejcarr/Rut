@@ -1,4 +1,5 @@
-from rut.resampled_nonparametric import *
+from rut.sampling import find_sampling_value
+from rut.mannwhitneyu import mannwhitneyu
 import unittest
 import nose2
 import numpy as np

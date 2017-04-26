@@ -4,7 +4,7 @@ from setuptools import setup
 from warnings import warn
 
 if sys.version_info.major != 3:
-    raise RuntimeError('SEQC requires Python 3')
+    raise RuntimeError('Rut requires Python 3')
 if sys.version_info.minor < 5:
     warn('Multiprocessing analysis methods may not function on Python versions < 3.5')
 
@@ -26,6 +26,8 @@ setup(name='rut',
           'pandas>=0.18.1',
           'scipy>=0.14.0',
           'statsmodels',
-          'nose2'],
+          'nose2',
+          'scikit-learn',
+          'matplotlib'],
       )
 

@@ -1,6 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from rut import resampled_nonparametric
+from rut.sampling import find_sampling_value
 
 
 def volcano(a, b, results, ax=None):
@@ -20,7 +20,7 @@ def volcano(a, b, results, ax=None):
     sig_dn = sig & (results['z_approx'] < 0)
 
     # find the sampling value
-    sampling_value = resampled_nonparametric.find_sampling_value([a, b], 10)
+    sampling_value = find_sampling_value([a, b], 10)
 
     # correct library contributions for sampling
     an = a.mul(sampling_value / a.sum(axis=1), axis=0)
