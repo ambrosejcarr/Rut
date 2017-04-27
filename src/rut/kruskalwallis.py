@@ -1,12 +1,12 @@
-from functools import partial
 from contextlib import closing
 from multiprocessing import Pool
 import numpy as np
 import pandas as pd
 from scipy.stats.mstats import kruskalwallis as _kruskalwallis
+from statsmodels.sandbox.stats.multicomp import multipletests
 from rut.sampling import draw_sample, find_sampling_value, normalize
 from rut.stats import confidence_interval
-from statsmodels.sandbox.stats.multicomp import multipletests
+from rut.misc import category_to_numeric
 
 
 def _kw_sampling_function(data, splits, n_observation):
@@ -41,17 +41,6 @@ def _kruskal(data):
         except ValueError:
             results.append([0, 1.])
     return results
-
-
-def category_to_numeric(labels):
-    """transform categorical labels to a numeric array"""
-    labels = np.array(labels)
-    if np.issubdtype(labels.dtype, np.integer):
-        return labels
-    else:
-        cats = np.unique(labels)
-        map_ = dict(zip(cats, np.arange(cats.shape[0])))
-        return np.array([map_[i] for i in labels])
 
 
 def kruskalwallis(
@@ -109,9 +98,9 @@ def kruskalwallis(
     v = find_sampling_value(np.split(data, splits), sampling_percentile)
     norm_data, labels = normalize(data, v, upsample, labels)
 
-    splits = np.where(np.diff(labels))[0] + 1  # re-diff, norm_data causes loss
+    norm_splits = np.where(np.diff(labels))[0] + 1  # re-diff, norm_data causes loss
 
-    n_observation = min(d.shape[0] for d in np.split(norm_data, splits))
+    n_observation = min(d.shape[0] for d in np.split(norm_data, norm_splits))
     n_observation = min(n_observation, max_obs_per_sample)  # check obs ceiling from param
 
     if verbose:  # report sampling values
@@ -121,7 +110,7 @@ def kruskalwallis(
     # draw samples and shunt them to the kruskal test to save memory overhead
     # (3s sampling vs 40s kruskal)
     # create an iterator to draw samples
-    split_data = np.split(data, splits)
+    split_data = np.split(norm_data, norm_splits)
     sampling_iterator = (
         [draw_sample(d, n_observation) for d in split_data] for _ in np.arange(n_iter))
 
