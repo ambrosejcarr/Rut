@@ -13,10 +13,19 @@ import pandas as pd
 # todo | draw infinite samples from a normalized data matrix
 
 
-def round_random(sample):
-    """round a sample probabilistically; this is the most computationally expensive function in this module"""
-    p = np.random.sample(sample.shape)
-    return np.floor(sample) + (sample % 1 > p).astype(int)
+def round_random(norm_data):
+    """
+    round a sample probabilistically
+
+    note: this is the most computationally expensive function in this module
+
+    :param np.ndarray norm_data: input data normalized to a particular observation number
+
+    :return np.ndarray: integer-valued sample from norm_data
+    """
+    # todo somewhere I need to draw from norm_data
+    p = np.random.sample(norm_data.shape)
+    return np.floor(norm_data) + (norm_data % 1 > p).astype(int)
 
 
 class Sampler:
@@ -162,9 +171,10 @@ class Sampler:
         global shared_data
         shared_data = data
 
-    def _run(self):
+    def run(self):
 
         # make sure the data is normalized
+        self._normalize()
 
         # mappers should be functions in the form:
         # func(n_observations)
