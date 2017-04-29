@@ -2,7 +2,7 @@ import numpy as np
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
 import phenograph
-from rut.sampling import normalize, round_random
+# from rut.sampling import normalize, round_random
 
 # todo | parallelize sampling if memory usage allows.
 

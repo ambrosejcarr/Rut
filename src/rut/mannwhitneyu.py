@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 from scipy.stats.mstats import count_tied_groups, rankdata
 from statsmodels.sandbox.stats.multicomp import multipletests
-from rut.sampling import draw_sample, normalize, find_sampling_value
+# from rut.sampling import draw_sample, normalize, find_sampling_value
 from rut.stats import z_to_p, confidence_interval
 
 

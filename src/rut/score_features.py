@@ -5,7 +5,7 @@ from contextlib import closing
 from multiprocessing import Pool
 from rut.misc import category_to_numeric
 from rut.stats import confidence_interval
-from rut.sampling import draw_sample, find_sampling_value, normalize
+# from rut.sampling import draw_sample, find_sampling_value, normalize
 
 
 def _score_features(samples, feature_sets):

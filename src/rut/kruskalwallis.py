@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 from scipy.stats.mstats import kruskalwallis as _kruskalwallis
 from statsmodels.sandbox.stats.multicomp import multipletests
-from rut.sampling import draw_sample, find_sampling_value, normalize
+# from rut.sampling import draw_sample, find_sampling_value, normalize
 from rut.stats import confidence_interval
 from rut.misc import category_to_numeric
 
