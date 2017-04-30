@@ -10,4 +10,4 @@ if __name__ == '__main__':
     data = pd.DataFrame(np.random.randint(0, 10, 100).reshape(10, 10))
     obj = sample.Sampled(data, labels)
     print(obj.data)
-    print(obj.run(4, obj.datasum, np.sum, 4))
+    print(obj.run(4, obj.datasum, lambda x: x, 4))
