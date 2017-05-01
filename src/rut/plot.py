@@ -1,9 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from rut.sampling import find_sampling_value
 
 
-def volcano(a, b, results, ax=None):
+def volcano(a, b, results, sampling_percentile=10, ax=None):
     """volcano is -log10 p-value against mean expression
 
     :param a:
@@ -20,7 +19,9 @@ def volcano(a, b, results, ax=None):
     sig_dn = sig & (results['z_approx'] < 0)
 
     # find the sampling value
-    sampling_value = find_sampling_value([a, b], 10)
+    sampling_value = min(
+        np.percentile(g, sampling_percentile)
+        for g in [a.sum(axis=1), b.sum(axis=1)])
 
     # correct library contributions for sampling
     an = a.mul(sampling_value / a.sum(axis=1), axis=0)

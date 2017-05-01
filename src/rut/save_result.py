@@ -7,6 +7,6 @@ def save_result(result_object, filename):
     :param str filename: filename for saved object
     :return None: saves the data to file
     """
-    result_object.to_csv(filename)
+    result_object.to_csv(filename, compression='gzip')
 
 

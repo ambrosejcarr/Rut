@@ -5,7 +5,14 @@ import pandas as pd
 from scipy.stats.mstats import count_tied_groups, rankdata
 import warnings
 from rut.stats import z_to_p, confidence_interval
+from rut.misc import suppress_stdout_stderr
 from statsmodels.sandbox.stats.multicomp import multipletests
+from scipy.stats.mstats import kruskalwallis as _kruskalwallis
+from sklearn.cluster import KMeans
+from sklearn.decomposition import PCA
+import phenograph
+from functools import reduce, partial
+
 
 # must test with openblas enabled and disabled
 # see comment #3 on answer #3:
@@ -20,13 +27,14 @@ from statsmodels.sandbox.stats.multicomp import multipletests
 class Sampled:
 
     def __init__(
-            self, data, labels, sampling_percentile=10, upsample=False, is_sorted=False):
+            self, data, labels, sampling_percentile=10, feature_sets=None, upsample=False,
+            is_sorted=False):
         """
 
         :param pd.DataFrame | np.array data:
-        :param n_iter:
         :param np.ndarray labels:
         :param sampling_percentile:
+        :param feature_sets: optional parameter, pre-processing done in init
         :param upsample:
         :param is_sorted:
         """
@@ -35,7 +43,7 @@ class Sampled:
             raise TypeError('use dataframe')
         else:
             index = data.index
-            self.features = data.columns
+            self._features = data.columns
             data = data.values
 
         # make labels numeric; does nothing if labels are already numeric
@@ -84,14 +92,84 @@ class Sampled:
         self.splits = np.ctypeslib.as_ctypes(splits)
         self.splits = sharedctypes.Array(self.splits._type_, self.splits, lock=False)
 
+        # privately expose metadata
         self._labels = labels
+        self._unique_label_order = np.unique(labels)
         self._index = index
+
+        # process feature sets if they were provided
+        if feature_sets is not None:
+            # map features to integer values
+            merged_features = np.array(reduce(np.union1d, feature_sets.values()))
+
+            # toss features not in data
+            merged_features = merged_features[np.in1d(merged_features, self._features)]
+
+            self._numerical_feature_sets = [
+                np.where(np.in1d(merged_features, fset))[0] for fset in
+                feature_sets.values()]
+
+            self._features_in_gene_sets = np.in1d(self._features, merged_features)
+            self._feature_set_labels = list(feature_sets.keys())
+        else:
+            self._numerical_feature_sets = None
+            self._features_in_gene_sets = None
+            self._feature_set_labels = None
 
     def _proc_init(self):
         global data
         global splits
         data = self.data
         splits = self.splits
+
+    # todo could eventually move to sparse arrays
+    # todo sample once from complete data, perhaps? if can put all in one array, better.
+    @staticmethod
+    def _draw_sample_with_replacement(normalized_data, n, column_inds=None):
+        """Randomly sample n normalized observations from normalized_data
+        :param np.ndarray normalized_data: normalized observations x features matrix. Note
+          that the sum of the features for each observation in this data determines the
+          total number of times the features are observed. Hence, this parameter cannot
+          be set in this function, but must be set by normalize()
+        :param int n: number of observations to draw from normalized_data
+
+        :return np.ndarray: integer valued sample: n x features array
+        """
+        np.random.seed()
+
+        idx = np.random.randint(0, normalized_data.shape[0], n)
+        if column_inds is not None:
+            sample = normalized_data[idx, :][:, column_inds]
+        else:
+            sample = normalized_data[idx, :]
+        p = np.random.sample(sample.shape)
+        sample = np.floor(sample) + (sample % 1 > p).astype(int)
+
+        return sample
+
+    @staticmethod
+    def _draw_sample_with_replacement_iterative(normalized_data, n, column_inds=None):
+        """Randomly sample n normalized observations from normalized_data
+        :param np.ndarray normalized_data: normalized observations x features matrix. Note
+          that the sum of the features for each observation in this data determines the
+          total number of times the features are observed. Hence, this parameter cannot
+          be set in this function, but must be set by normalize()
+        :param int n: number of observations to draw from normalized_data
+
+        :return np.ndarray: integer valued sample: n x features array
+        """
+        np.random.seed()
+
+        idx = np.random.randint(0, normalized_data.shape[0], n)
+        if column_inds is not None:
+            sample = normalized_data[idx, :][:, column_inds]
+        else:
+            sample = normalized_data[idx, :]
+        for i in np.arange(sample.shape[0]):
+            p = np.random.sample((1, sample.shape[1]))
+            sample[i, :] = np.floor(sample[i, :]) + (sample[i, :] % 1 > p).astype(int)
+
+        return sample
 
     @staticmethod
     def _draw_sample(normalized_data, n):
@@ -106,33 +184,43 @@ class Sampled:
         """
         np.random.seed()
 
-        idx = np.random.randint(0, normalized_data.shape[0], n)
-        sample = normalized_data[idx, :]
+        # idx = np.random.randint(0, normalized_data.shape[0], n)
+        # sample = normalized_data[idx, :]
 
-        p = np.random.sample(sample.shape)
-        sample = np.floor(sample) + (sample % 1 > p).astype(int)
+        p = np.random.sample(normalized_data.shape)
+        sample = np.floor(normalized_data) + (normalized_data % 1 > p).astype(int)
 
         return sample
 
     @staticmethod
-    def datasum(n):
-        return np.ctypeslib.as_array(data).sum()
-
-    @classmethod
-    def mwu_test(cls, n):
+    def get_group_data():
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", category=RuntimeWarning)
             dview = np.ctypeslib.as_array(data)
             sview = np.ctypeslib.as_array(splits)
-        group_data = np.split(dview, sview)
+        return np.split(dview, sview)
+
+    @staticmethod
+    def get_ungrouped_data():
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=RuntimeWarning)
+            dview = np.ctypeslib.as_array(data)
+        return dview
+
+    @classmethod
+    def mwu_map(cls, n):
+
+        group_data = cls.get_group_data()
         assert len(group_data) == 2
-        x, y = (cls._draw_sample(d, n) for d in group_data)
+        # todo should allocate the sampled data only once
+        x, y = (cls._draw_sample_with_replacement_iterative(d, n) for d in group_data)
 
         # calculate U for n1
         if x.ndim == 1 and y.ndim == 1:
             x, y = x[:, np.newaxis], y[:, np.newaxis]
-        ranks = rankdata(np.concatenate([x, y]), axis=0)
         nx, ny = x.shape[0], y.shape[0]
+        ranks = rankdata(np.concatenate([x, y]), axis=0)
+        del x, y  # this helped memory usage by about 200mb, 1/6 of test case
         nt = nx + ny
         U = ranks[:nx].sum(0) - nx * (nx + 1) / 2.
 
@@ -163,14 +251,14 @@ class Sampled:
         prob = z_to_p(z)
         return np.vstack([u, z, prob]).T
 
-    def mwu_reduce(self, results, alpha=0.5):
+    def mwu_reduce(self, results, alpha=0.05):
 
         results = np.stack(results)
         ci = confidence_interval(results[:, :, 1])
 
         results = pd.DataFrame(
             data=np.concatenate([np.median(results, axis=0), ci], axis=1),
-            index=self.features,
+            index=self._features,
             columns=['U', 'z_approx', 'p', 'z_lo', 'z_hi'])
 
         # add multiple-testing correction
@@ -180,11 +268,104 @@ class Sampled:
         results.iloc[:, 1:4] = np.round(results.iloc[:, 1:4], 2)
         return results
 
-    def run(self, n_iter, fmap, freduce, n_processes=None):
+    @classmethod
+    def kw_map(cls, n):
+        group_data = cls.get_group_data()
+        samples = [cls._draw_sample_with_replacement(d, n) for d in group_data]
+
+        results = []
+        for i in np.arange(samples[0].shape[1]):
+            args = [d[:, i] for d in samples]
+            try:
+                results.append(_kruskalwallis(*args))
+            except ValueError:
+                results.append([0, 1.])
+        return results
+
+    def kw_reduce(self, results, alpha=0.05):
+        # todo | this function currently lacks sorting of results, which is not
+        # todo | consistent with MWU
+        results = np.stack(results)  # H, p
+
+        ci = confidence_interval(results[:, :, 0])  # around H
+        results = pd.DataFrame(
+            data=np.concatenate([np.median(results, axis=0), ci], axis=1),
+            index=self._features,
+            columns=['H', 'p', 'H_lo', 'H_hi'])
+
+        results['q'] = multipletests(results['p'], alpha=alpha, method='fdr_tsbh')[1]
+        results = results[['H', 'H_lo', 'H_hi', 'p', 'q']]
+        return results
+
+    @classmethod
+    def cluster_map(cls, n):
+        sample = cls.get_ungrouped_data()
+        pca = PCA(n_components=50, svd_solver='randomized')
+        reduced = pca.fit_transform(sample)
+
+        # cluster, omitting phenograph outputs
+        with suppress_stdout_stderr():
+            clusters, *_ = phenograph.cluster(reduced, n_jobs=1)
+        return clusters
+
+    def cluster_reduce(self, results):
+        n = results[0].shape[0]
+        integrated = np.zeros((n, n), dtype=np.uint8)
+        for i in np.arange(len(results)):
+            labs = results[i]
+            for j in np.arange(integrated.shape[0]):
+                increment = labs == labs[j]
+                integrated[j, :] += increment.astype(np.uint8)
+
+        # get mean cluster size
+        k = int(np.round(np.mean([np.unique(r).shape[0] for r in results])))
+
+        # cluster the integrated similarity matrix
+        km = KMeans(n_clusters=15)
+        metacluster_labels = km.fit_predict(integrated)
+
+        # propagate ids back to original coordinates and return
+        cluster_ids = np.ones(n, dtype=np.int) * -1
+        cluster_ids[self._labels] = metacluster_labels
+        return cluster_ids
+
+    @classmethod
+    def score_features_map(cls, n, numerical_feature_sets, features_in_gene_sets):
+        group_data = cls.get_group_data()
+        samples = [
+            cls._draw_sample_with_replacement(d, n, features_in_gene_sets)
+            for d in group_data]
+        results = np.zeros((len(samples), len(numerical_feature_sets)), dtype=float)
+        for i, arr in enumerate(samples):
+            for j, fset in enumerate(numerical_feature_sets):
+                results[i, j] = np.sum(arr[:, fset], axis=1).mean()
+        return results
+
+    def score_features_reduce(self, results):
+        results = np.stack(list(results), axis=2)
+        ci = confidence_interval(results, axis=2)
+        mu = np.mean(results, axis=2)
+        df = pd.Panel(
+            np.concatenate([mu[None, :], ci.T], axis=0),
+            items=['mean', 'ci_low', 'ci_high'],
+            major_axis=self._unique_label_order,
+            minor_axis=list(self._feature_set_labels)
+        )
+
+        return df
+
+    def run(
+            self, n_iter, fmap, freduce, n_processes=None, fmap_kwargs=None,
+            freduce_kwargs=None):
         """
 
         :return:
         """
+        if fmap_kwargs is not None:
+            fmap = partial(fmap, **fmap_kwargs)
+        if freduce_kwargs is not None:
+            freduce = partial(freduce, **freduce_kwargs)
+
         with closing(Pool(processes=n_processes, initializer=self._proc_init())) as pool:
             results = pool.map(fmap, [self.n] * n_iter)
         return freduce(results)

@@ -7,4 +7,4 @@ def load_result(filename):
     :param str filename: name of the saved results objects
     :return pd.DataFrame: loaded results object
     """
-    return pd.read_csv(filename, index_col=0, header=0)
+    return pd.read_csv(filename, index_col=0, header=0, compression='gzip')
