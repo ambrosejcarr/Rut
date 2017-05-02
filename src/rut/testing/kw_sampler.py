@@ -8,14 +8,24 @@ import yappi
 
 if __name__ == '__main__':
     # yappi.start()
-    labels = np.array(([0] * 5) + ([1] * 5))
+    x = np.array([
+        np.random.randint(0, 5, 10),  # lower than y
+        np.ones(10) * 100,  # large, takes up most of library size normalization
+        np.random.randint(5, 10, 10)  # higher than y
+    ]).T
+
+    y = np.array([
+        np.random.randint(5, 10, 10),  # higher than y
+        np.ones(10) * 100,  # takes up most of library size normalization
+        np.random.randint(0, 5, 10)  # lower than y
+    ]).T
+
     data = pd.DataFrame(
-        np.random.randint(0, 10, 100).reshape(10, 10),
-        index=list('abcdefghij'),
-        columns=list('klmnopqrst')
+        data=np.concatenate([x, y], axis=0)
     )
-    feature_sets = {'ten': [0, 1, 2, 3], 'gtf': [1, 2], 'ded': [3, 7]}
-    obj = sample.Sampled(data, labels, feature_sets=feature_sets)
+    labels = np.concatenate([np.ones(10), np.zeros(10)], axis=0)
+
+    obj = sample.Sampled(data, labels)
     print(obj.run(4, obj.kw_map, obj.kw_reduce, 4))
     # yappi.get_func_stats().print_all()
     # yappi.get_thread_stats().print_all()

@@ -17,7 +17,7 @@ if __name__ == '__main__':
         columns=list('klmnopqrst')
     )
 
-    feature_sets = {'ten': [0, 1, 2, 3], 'gtf': [1, 2], 'ded': [3, 7]}
+    feature_sets = {'ten': list('klmn'), 'gtf': list('nm'), 'ded': list('pqe')}
     obj = sample.Sampled(data, labels, feature_sets=feature_sets)
     print(obj.run(
         4,
@@ -26,6 +26,6 @@ if __name__ == '__main__':
         4,
         fmap_kwargs=dict(features_in_gene_sets=obj._features_in_gene_sets,
                          numerical_feature_sets=obj._numerical_feature_sets)
-    ))
+    )['mean'])
     # yappi.get_func_stats().print_all()
     # yappi.get_thread_stats().print_all()

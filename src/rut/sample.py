@@ -13,17 +13,10 @@ from sklearn.decomposition import PCA
 import phenograph
 from functools import reduce, partial
 
-# np.seterr(all='warn')
-# warnings.filterwarnings("error", category=DeprecationWarning)
-# warnings.filterwarnings("error", category=FutureWarning)
 # must test with openblas enabled and disabled
 # see comment #3 on answer #3:
 # http://stackoverflow.com/questions/17785275/share-large-read-only-numpy-array-between-multiprocessing-processes
 # export OPENBLAS_NUM_THREADS=1
-
-# bug in python produces a runtime warning; grab this with warnings and eliminate it
-# there are maybe some ways of working around this, see:
-# http://stackoverflow.com/questions/4964101/pep-3118-warning-when-using-ctypes-array-as-numpy-array
 
 
 class Sampled:
@@ -132,7 +125,7 @@ class Sampled:
         splits = self.splits
 
     @staticmethod
-    def _draw_single_sample_with_replacement(normalized_data, n, splits, column_inds=None):
+    def _draw_sample_with_replacement(normalized_data, n, splits, column_inds=None):
         """Randomly sample n normalized observations from normalized_data
         :param np.ndarray normalized_data: normalized observations x features matrix. Note
           that the sum of the features for each observation in this data determines the
@@ -149,7 +142,6 @@ class Sampled:
         esplits = [0] + list(splits) + [normalized_data.shape[0]]
         for i in np.arange(len(esplits) - 1):
             idx[n*i:n*(i+1)] = np.random.randint(esplits[i], esplits[i+1], n)
-        print(idx)
         if column_inds is not None:
             sample = normalized_data[idx, :][:, column_inds]
         else:
@@ -209,7 +201,7 @@ class Sampled:
         complete_data = cls.get_ungrouped_data()
         array_splits = cls.get_splits()
         assert array_splits.shape[0] == 1  # only have two classes
-        xy = cls._draw_single_sample_with_replacement(complete_data, n, array_splits)
+        xy = cls._draw_sample_with_replacement(complete_data, n, array_splits)
         # calculate U for x
         if xy.ndim == 1:
             xy = xy[:, np.newaxis]
@@ -264,12 +256,13 @@ class Sampled:
 
     @classmethod
     def kw_map(cls, n):
-        group_data = cls.get_group_data()
-        samples = [cls._draw_sample_with_replacement(d, n) for d in group_data]
+        complete_data = cls.get_ungrouped_data()
+        ssplits = cls.get_splits()
+
+        sample = cls._draw_sample_with_replacement(complete_data, n, ssplits)
 
         results = []
-        for i in np.arange(samples[0].shape[1]):
-            args = [d[:, i] for d in samples]
+        for args in (np.split(sample[:, i], ssplits) for i in np.arange(sample.shape[1])):
             try:
                 results.append(_kruskalwallis(*args))
             except ValueError:
@@ -277,8 +270,6 @@ class Sampled:
         return results
 
     def kw_reduce(self, results, alpha=0.05):
-        # todo | this function currently lacks sorting of results, which is not
-        # todo | consistent with MWU
         results = np.stack(results)  # H, p
 
         ci = confidence_interval(results[:, :, 0])  # around H
@@ -325,12 +316,15 @@ class Sampled:
 
     @classmethod
     def score_features_map(cls, n, numerical_feature_sets, features_in_gene_sets):
-        group_data = cls.get_group_data()
-        samples = [
-            cls._draw_sample_with_replacement(d, n, features_in_gene_sets)
-            for d in group_data]
-        results = np.zeros((len(samples), len(numerical_feature_sets)), dtype=float)
-        for i, arr in enumerate(samples):
+        complete_data = cls.get_ungrouped_data()
+        ssplits = cls.get_splits()
+
+        sample = cls._draw_sample_with_replacement(
+            complete_data, n, ssplits, features_in_gene_sets)
+
+        results = np.zeros(
+            (ssplits.shape[0] + 1, len(numerical_feature_sets)), dtype=float)
+        for i, arr in enumerate(np.split(sample, ssplits, axis=0)):
             for j, fset in enumerate(numerical_feature_sets):
                 results[i, j] = np.sum(arr[:, fset], axis=1).mean()
         return results
