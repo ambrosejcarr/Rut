@@ -13,7 +13,9 @@ from sklearn.decomposition import PCA
 import phenograph
 from functools import reduce, partial
 
-
+# np.seterr(all='warn')
+# warnings.filterwarnings("error", category=DeprecationWarning)
+# warnings.filterwarnings("error", category=FutureWarning)
 # must test with openblas enabled and disabled
 # see comment #3 on answer #3:
 # http://stackoverflow.com/questions/17785275/share-large-read-only-numpy-array-between-multiprocessing-processes
@@ -38,6 +40,8 @@ class Sampled:
         :param upsample:
         :param is_sorted:
         """
+
+        assert len(labels) == data.shape[0], '%d != %d' % (len(labels), data.shape[0])
         # assume DataFrame for now, fix later
         if not isinstance(data, pd.DataFrame):
             raise TypeError('use dataframe')
@@ -100,11 +104,16 @@ class Sampled:
         # process feature sets if they were provided
         if feature_sets is not None:
             # map features to integer values
-            merged_features = np.array(reduce(np.union1d, feature_sets.values()))
+            merged_features = np.array(list(reduce(np.union1d, feature_sets.values())))
 
             # toss features not in data
-            merged_features = merged_features[np.in1d(merged_features, self._features)]
-
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", category=FutureWarning)
+                merged_features = merged_features[np.in1d(
+                    merged_features, self._features)]
+                if len(merged_features) == 0:
+                    raise ValueError('Empty intersection of feature sets and data '
+                                     'features')
             self._numerical_feature_sets = [
                 np.where(np.in1d(merged_features, fset))[0] for fset in
                 feature_sets.values()]
@@ -122,10 +131,8 @@ class Sampled:
         data = self.data
         splits = self.splits
 
-    # todo could eventually move to sparse arrays
-    # todo sample once from complete data, perhaps? if can put all in one array, better.
     @staticmethod
-    def _draw_sample_with_replacement(normalized_data, n, column_inds=None):
+    def _draw_single_sample_with_replacement(normalized_data, n, splits, column_inds=None):
         """Randomly sample n normalized observations from normalized_data
         :param np.ndarray normalized_data: normalized observations x features matrix. Note
           that the sum of the features for each observation in this data determines the
@@ -137,35 +144,17 @@ class Sampled:
         """
         np.random.seed()
 
-        idx = np.random.randint(0, normalized_data.shape[0], n)
+        # draw indices from merged array, allocating in a single vector
+        idx = np.zeros(n * (len(splits) + 1), dtype=int)
+        esplits = [0] + list(splits) + [normalized_data.shape[0]]
+        for i in np.arange(len(esplits) - 1):
+            idx[n*i:n*(i+1)] = np.random.randint(esplits[i], esplits[i+1], n)
+        print(idx)
         if column_inds is not None:
             sample = normalized_data[idx, :][:, column_inds]
         else:
             sample = normalized_data[idx, :]
-        p = np.random.sample(sample.shape)
-        sample = np.floor(sample) + (sample % 1 > p).astype(int)
-
-        return sample
-
-    @staticmethod
-    def _draw_sample_with_replacement_iterative(normalized_data, n, column_inds=None):
-        """Randomly sample n normalized observations from normalized_data
-        :param np.ndarray normalized_data: normalized observations x features matrix. Note
-          that the sum of the features for each observation in this data determines the
-          total number of times the features are observed. Hence, this parameter cannot
-          be set in this function, but must be set by normalize()
-        :param int n: number of observations to draw from normalized_data
-
-        :return np.ndarray: integer valued sample: n x features array
-        """
-        np.random.seed()
-
-        idx = np.random.randint(0, normalized_data.shape[0], n)
-        if column_inds is not None:
-            sample = normalized_data[idx, :][:, column_inds]
-        else:
-            sample = normalized_data[idx, :]
-        for i in np.arange(sample.shape[0]):
+        for i in np.arange(sample.shape[0]):  # iteratively to save memory
             p = np.random.sample((1, sample.shape[1]))
             sample[i, :] = np.floor(sample[i, :]) + (sample[i, :] % 1 > p).astype(int)
 
@@ -207,35 +196,40 @@ class Sampled:
             dview = np.ctypeslib.as_array(data)
         return dview
 
+    @staticmethod
+    def get_splits():
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=RuntimeWarning)
+            sview = np.ctypeslib.as_array(splits)
+        return sview
+
     @classmethod
     def mwu_map(cls, n):
 
-        group_data = cls.get_group_data()
-        assert len(group_data) == 2
-        # todo should allocate the sampled data only once
-        x, y = (cls._draw_sample_with_replacement_iterative(d, n) for d in group_data)
-
-        # calculate U for n1
-        if x.ndim == 1 and y.ndim == 1:
-            x, y = x[:, np.newaxis], y[:, np.newaxis]
-        nx, ny = x.shape[0], y.shape[0]
-        ranks = rankdata(np.concatenate([x, y]), axis=0)
-        del x, y  # this helped memory usage by about 200mb, 1/6 of test case
-        nt = nx + ny
-        U = ranks[:nx].sum(0) - nx * (nx + 1) / 2.
+        complete_data = cls.get_ungrouped_data()
+        array_splits = cls.get_splits()
+        assert array_splits.shape[0] == 1  # only have two classes
+        xy = cls._draw_single_sample_with_replacement(complete_data, n, array_splits)
+        # calculate U for x
+        if xy.ndim == 1:
+            xy = xy[:, np.newaxis]
+        ranks = rankdata(xy, axis=0)
+        del xy  # memory savings
+        nt = 2 * n
+        U = ranks[:n].sum(0) - n * (n + 1) / 2.
 
         # get mean value
-        mu = (nx * ny) / 2.
+        mu = (n ** 2) / 2.
 
         # get smaller u (convention) for reporting only
-        u = np.amin([U, nx * ny - U], axis=0)
+        u = np.amin([U, n ** 2 - U], axis=0)
 
         sigsq = np.ones(ranks.shape[1]) * (nt ** 3 - nt) / 12.
 
         for i in np.arange(len(sigsq)):
             ties = count_tied_groups(ranks[:, i])
             sigsq[i] -= np.sum(v * (k ** 3 - k) for (k, v) in ties.items()) / 12.
-        sigsq *= nx * ny / float(nt * (nt - 1))
+        sigsq *= n ** 2 / float(nt * (nt - 1))
 
         # ignore division by zero warnings; they are properly dealt with by this test.
         with warnings.catch_warnings():

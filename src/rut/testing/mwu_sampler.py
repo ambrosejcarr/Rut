@@ -14,7 +14,7 @@ if __name__ == '__main__':
         index=list('abcdefghij'),
         columns=list('klmnopqrst')
     )
-    feature_sets = {'ten': [0, 1, 2, 3], 'gtf': [1, 2], 'ded': [3, 7]}
+    feature_sets = {'ten': list('klmn'), 'gtf': list('nm'), 'ded': list('pqe')}
     obj = sample.Sampled(data, labels, feature_sets=feature_sets)
     with open('yappi.txt', 'w') as f:
         yappi.get_func_stats().sort(sort_type='tsub', sort_order='desc').print_all(out=f)
