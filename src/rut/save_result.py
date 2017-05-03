@@ -7,6 +7,8 @@ def save_result(result_object, filename):
     :param str filename: filename for saved object
     :return None: saves the data to file
     """
+    if not filename.endswith('.gz'):
+        filename += '.gz'
     result_object.to_csv(filename, compression='gzip')
 
 
