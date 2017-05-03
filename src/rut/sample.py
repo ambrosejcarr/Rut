@@ -26,24 +26,38 @@ class Sampled:
             is_sorted=False):
         """
 
-        :param pd.DataFrame | np.array data:
-        :param np.ndarray labels:
-        :param sampling_percentile:
-        :param feature_sets: optional parameter, pre-processing done in init
-        :param upsample:
-        :param is_sorted:
+        :param pd.DataFrame | np.array data: m observations x p features array or
+          dataframe
+        :param np.ndarray labels:  condition labels that separate cells into units of
+          comparison
+        :param sampling_percentile:  the percentile of observation size to use as the
+          sampling size of drawn samples
+        :param dict feature_sets: (Optional) dictionary of iterables containing features.
+          If provided, at least one feature per set must overlap with features in data for
+          the set to be tested against the data.
+        :param bool upsample: if True, observation sizes are equalized at the sampling
+          value identified by sampling percentile, with smaller observations being
+          upsampled to this level and no observations being discarded.
+        :param bool is_sorted: if True, no sorting is done of data or labels
         """
 
-        assert len(labels) == data.shape[0], '%d != %d' % (len(labels), data.shape[0])
-        # assume DataFrame for now, fix later
-        if not isinstance(data, pd.DataFrame):
-            raise TypeError('use dataframe')
-        else:
+        # check input types
+        if len(labels) != data.shape[0]:
+            raise ValueError('number of labels %d != number of observations %d'
+                             % (len(labels), data.shape[0]))
+
+        if isinstance(data, pd.DataFrame):
             index = data.index
             self._features = data.columns
             data = data.values
+        elif isinstance(data, np.ndarray):
+            index = np.arange(data.shape[0])
+            self._features = np.arange(data.shape[1])
+        else:
+            raise TypeError('Data must be provided as a numpy array or pandas DataFrame, '
+                            'not %s.' % repr(type(data)))
 
-        # make labels numeric; does nothing if labels are already numeric
+        # construct numeric labels
         numerical_label_order = np.unique(labels)
         map_ = dict(zip(numerical_label_order, np.arange(numerical_label_order.shape[0])))
         numeric_labels = np.array([map_[i] for i in labels])
@@ -63,23 +77,24 @@ class Sampled:
         observation_sizes = data.sum(axis=1)
 
         # get sample size
-        sampling_value = min(
+        n_observations_per_sample_draw = min(
             np.percentile(g, sampling_percentile)
             for g in np.split(observation_sizes, splits))
 
         # throw out cells below sampling threshold unless upsampling is requested
         if not upsample:
-            keep = observation_sizes >= sampling_value
+            keep = observation_sizes >= n_observations_per_sample_draw
             data = data[keep, :]
             numeric_labels = numeric_labels[keep]
             labels = labels[keep]
             index = index[keep]
             observation_sizes = observation_sizes[keep]
             splits = np.where(np.diff(numeric_labels))[0] + 1
-        self.n = min(g.shape[0] for g in np.split(observation_sizes, splits))
+        self.n_observations_per_sample = min(
+            g.shape[0] for g in np.split(observation_sizes, splits))
 
         # normalize data
-        data = (data * sampling_value) / observation_sizes[:, np.newaxis]
+        data = (data * n_observations_per_sample_draw) / observation_sizes[:, np.newaxis]
 
         # convert to shared array & expose data
         self.data = np.ctypeslib.as_ctypes(data)
@@ -99,7 +114,7 @@ class Sampled:
             # map features to integer values
             merged_features = np.array(list(reduce(np.union1d, feature_sets.values())))
 
-            # toss features not in data
+            # get intersection of features in sets and features in data
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", category=FutureWarning)
                 merged_features = merged_features[np.in1d(
@@ -107,39 +122,53 @@ class Sampled:
                 if len(merged_features) == 0:
                     raise ValueError('Empty intersection of feature sets and data '
                                      'features')
-            self._numerical_feature_sets = [
-                np.where(np.in1d(merged_features, fset))[0] for fset in
-                feature_sets.values()]
 
+            # store numerical feature sets, exclude empty sets
+            self._numerical_feature_sets = []
+            for fset in feature_sets.values():
+                fset_idx = np.where(np.in1d(merged_features, fset))[0]
+                if fset_idx:
+                    self._numerical_feature_sets.append(fset_idx)
+
+            # store the shared indices; this decreases memory usage during sampling
             self._features_in_gene_sets = np.in1d(self._features, merged_features)
             self._feature_set_labels = list(feature_sets.keys())
         else:
+            # store empty values to ensure class consistency
             self._numerical_feature_sets = None
             self._features_in_gene_sets = None
             self._feature_set_labels = None
 
     def _proc_init(self):
+        """
+        Function run by each process spawned to expose global variables data and splits
+        of shared ctypes objects. This is necessary becasue shared ctypes can only be
+        passed to processes through inheritance.
+        """
         global data
         global splits
         data = self.data
         splits = self.splits
 
     @staticmethod
-    def _draw_sample_with_replacement(normalized_data, n, splits, column_inds=None):
+    def _draw_sample_with_replacement(normalized_data, n, split_points, column_inds=None):
         """Randomly sample n normalized observations from normalized_data
+
         :param np.ndarray normalized_data: normalized observations x features matrix. Note
           that the sum of the features for each observation in this data determines the
-          total number of times the features are observed. Hence, this parameter cannot
-          be set in this function, but must be set by normalize()
+          total number of times the features are observed.
         :param int n: number of observations to draw from normalized_data
+        :param np.ndarray split_points: the locations in normalized_data that if the array
+          were split, separate the different classes identified by labels passed to the
+          constructor
 
         :return np.ndarray: integer valued sample: n x features array
         """
         np.random.seed()
 
         # draw indices from merged array, allocating in a single vector
-        idx = np.zeros(n * (len(splits) + 1), dtype=int)
-        esplits = [0] + list(splits) + [normalized_data.shape[0]]
+        idx = np.zeros(n * (len(split_points) + 1), dtype=int)
+        esplits = [0] + list(split_points) + [normalized_data.shape[0]]
         for i in np.arange(len(esplits) - 1):
             idx[n*i:n*(i+1)] = np.random.randint(esplits[i], esplits[i+1], n)
         if column_inds is not None:
@@ -153,43 +182,34 @@ class Sampled:
         return sample
 
     @staticmethod
-    def _draw_sample(normalized_data, n):
-        """Randomly sample n normalized observations from normalized_data
+    def _draw_sample(normalized_data):
+        """Randomly sample each observation from normalized_data a single time, in order
+
         :param np.ndarray normalized_data: normalized observations x features matrix. Note
           that the sum of the features for each observation in this data determines the
-          total number of times the features are observed. Hence, this parameter cannot
-          be set in this function, but must be set by normalize()
-        :param int n: number of observations to draw from normalized_data
+          total number of times the features are observed.
 
         :return np.ndarray: integer valued sample: n x features array
         """
         np.random.seed()
 
-        # idx = np.random.randint(0, normalized_data.shape[0], n)
-        # sample = normalized_data[idx, :]
-
+        # randomly round each data point, generating a sample without replacement
         p = np.random.sample(normalized_data.shape)
         sample = np.floor(normalized_data) + (normalized_data % 1 > p).astype(int)
 
         return sample
 
     @staticmethod
-    def get_group_data():
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", category=RuntimeWarning)
-            dview = np.ctypeslib.as_array(data)
-            sview = np.ctypeslib.as_array(splits)
-        return np.split(dview, sview)
-
-    @staticmethod
-    def get_ungrouped_data():
+    def get_shared_data():
+        """helper function to expose a numpy view of the shared data object"""
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", category=RuntimeWarning)
             dview = np.ctypeslib.as_array(data)
         return dview
 
     @staticmethod
-    def get_splits():
+    def get_shared_splits():
+        """helper function to expose a numpy view of the shared splits object"""
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", category=RuntimeWarning)
             sview = np.ctypeslib.as_array(splits)
@@ -197,9 +217,18 @@ class Sampled:
 
     @classmethod
     def mwu_map(cls, n):
+        """Mann-Whitney U-test between classes defind by global variables data and splits
 
-        complete_data = cls.get_ungrouped_data()
-        array_splits = cls.get_splits()
+        Designed to be mapped to a multiprocessing pool. Draws a sample of size n from
+        each class
+
+        :param int n: number of observations to draw with replacement per class sampled
+          from data
+        :return np.ndarray: n features x 2 array with columns of U-scores and z-scores
+        """
+
+        complete_data = cls.get_shared_data()
+        array_splits = cls.get_shared_splits()
         assert array_splits.shape[0] == 1  # only have two classes
         xy = cls._draw_sample_with_replacement(complete_data, n, array_splits)
         # calculate U for x
@@ -234,10 +263,25 @@ class Sampled:
         # correct infs
         z[sigsq == 0] = 0
 
-        prob = z_to_p(z)
-        return np.vstack([u, z, prob]).T
+        return np.vstack([u, z]).T
 
     def mwu_reduce(self, results, alpha=0.05):
+        """
+        reduction function for Mann-Whitney U-test that processes the results from
+        mw_map into a results object
+
+        :param list results: output from mw_map function, a list of np.array objects
+          containing U-scores and z-scores.
+        :param float alpha: acceptable type-I error rate for BY (negative) FDR correction
+
+        :return pd.DataFrame: contains:
+          U: test statistic of M-W U-test
+          z_approx: median z-score across iterations
+          z_lo: 2.5% confidence boundary for z-score
+          z_hi: 97.5% confidence boundary for z-score
+          p: p-value corresponding to z_approx
+          q: fdr-corrected q-value corresponding to p, across tests in results
+        """
 
         results = np.stack(results)
         ci = confidence_interval(results[:, :, 1])
@@ -245,19 +289,31 @@ class Sampled:
         results = pd.DataFrame(
             data=np.concatenate([np.median(results, axis=0), ci], axis=1),
             index=self._features,
-            columns=['U', 'z_approx', 'p', 'z_lo', 'z_hi'])
+            columns=['U', 'z_approx', 'z_lo', 'z_hi'])
+
+        # calculate p-values for median z-score
+        results['p'] = z_to_p(results['z_approx'])
 
         # add multiple-testing correction
-        results['q'] = multipletests(results['p'], alpha=alpha, method='fdr_tsbh')[1]
+        results['q'] = multipletests(results['p'], alpha=alpha, method='fdr_by')[1]
 
-        results = results[['U', 'z_approx', 'z_lo', 'z_hi', 'p', 'q']].sort_values('q')
+        results = results.sort_values('q')
         results.iloc[:, 1:4] = np.round(results.iloc[:, 1:4], 2)
         return results
 
     @classmethod
     def kw_map(cls, n):
-        complete_data = cls.get_ungrouped_data()
-        ssplits = cls.get_splits()
+        """Kruskal-wallis ANOVA between classes defind by global variables data and splits
+
+        Designed to be mapped to a multiprocessing pool. Draws a sample of size n from
+        each class
+
+        :param int n: number of observations to draw with replacement per class sampled
+          from data
+        :return np.ndarray: n features x 2 array with columns of H-scores and p-values
+        """
+        complete_data = cls.get_shared_data()
+        ssplits = cls.get_shared_splits()
 
         sample = cls._draw_sample_with_replacement(complete_data, n, ssplits)
 
@@ -267,24 +323,49 @@ class Sampled:
                 results.append(_kruskalwallis(*args))
             except ValueError:
                 results.append([0, 1.])
-        return results
+        return np.vstack(results)
 
     def kw_reduce(self, results, alpha=0.05):
+        """
+        reduction function for Kruskal-Wallis ANOVA that processes the results from
+        kw_map into a results object
+
+        :param list results: output from kw_map function, a list of np.array objects
+          containing H-scores and z-scores.
+        :param float alpha: acceptable type-I error rate for BY (negative) FDR correction
+
+        :return pd.DataFrame: contains:
+          H: median test statistic of K-W H-test
+          H_lo: 2.5% confidence boundary for H-score
+          H_hi: 97.5% confidence boundary for H-score
+          p: p-value corresponding to H
+          q: fdr-corrected q-value corresponding to p, across tests in results
+        """
+
         results = np.stack(results)  # H, p
 
-        ci = confidence_interval(results[:, :, 0])  # around H
+        ci = confidence_interval(results[:, :, 0])
         results = pd.DataFrame(
             data=np.concatenate([np.median(results, axis=0), ci], axis=1),
             index=self._features,
             columns=['H', 'p', 'H_lo', 'H_hi'])
 
         results['q'] = multipletests(results['p'], alpha=alpha, method='fdr_tsbh')[1]
-        results = results[['H', 'H_lo', 'H_hi', 'p', 'q']]
+        results = results[['H', 'H_lo', 'H_hi', 'p', 'q']].sort_values('q')
         return results
 
     @classmethod
-    def cluster_map(cls, n):
-        sample = cls.get_ungrouped_data()
+    def cluster_map(cls, *args):
+        """
+        calculate phenograph community assignments across resampled data for each
+        of the n observations in global variable data
+
+        :param args: allows passing of arbitrary arguments necessary to evoke
+          multiprocessing.Pool.map()
+        :return np.ndarray: (n,) cluster assignments
+        """
+        complete_data = cls.get_shared_data()
+        sample = cls._draw_sample(complete_data)
         pca = PCA(n_components=50, svd_solver='randomized')
         reduced = pca.fit_transform(sample)
 
@@ -293,14 +374,24 @@ class Sampled:
             clusters, *_ = phenograph.cluster(reduced, n_jobs=1)
         return clusters
 
+    # todo consider building this as a sparse matrix (it probably is!)
     def cluster_reduce(self, results):
-        n = results[0].shape[0]
+        """
+        carry out consensus clustering across iterations of phenograph run on data,
+        running k-means on the confusion matrix generated by these iterations with k fixed
+        as the median number of communities selected by phenograph.
+
+        :param list results: list of vectors of cluster labels
+        :return np.ndarray: (n,) consensus cluster labels
+        """
+        # create confusion matrix
+        n = self._index.shape[0]
         integrated = np.zeros((n, n), dtype=np.uint8)
         for i in np.arange(len(results)):
             labs = results[i]
             for j in np.arange(integrated.shape[0]):
-                increment = labs == labs[j]
-                integrated[j, :] += increment.astype(np.uint8)
+                increment = np.equal(labs, labs[j]).astype(np.uint8)
+                integrated[j, :] += increment
 
         # get mean cluster size
         k = int(np.round(np.mean([np.unique(r).shape[0] for r in results])))
@@ -316,8 +407,19 @@ class Sampled:
 
     @classmethod
     def score_features_map(cls, n, numerical_feature_sets, features_in_gene_sets):
-        complete_data = cls.get_ungrouped_data()
-        ssplits = cls.get_splits()
+        """score a downsampled group of observations against a set of features
+
+        :param int n: number of observations to draw from each sample
+        :param list numerical_feature_sets: list of groups of features, translated to
+          numerical indices to support indexing into numpy arrays
+        :param np.array features_in_gene_sets:  array of features found in gene sets,
+          used to reduce scope of sampling to only relevant features.
+
+        :return np.ndarray: array of scores for n groups defined by different labels
+          across p non-empty feature sets
+        """
+        complete_data = cls.get_shared_data()
+        ssplits = cls.get_shared_splits()
 
         sample = cls._draw_sample_with_replacement(
             complete_data, n, ssplits, features_in_gene_sets)
@@ -330,6 +432,15 @@ class Sampled:
         return results
 
     def score_features_reduce(self, results):
+        """
+        average over the scores generated by sampling from the groups within the global
+        variable data
+
+        :param list results: output of score_features_map, list of numpy arrays containing
+          scores
+        :return np.ndarray: array of median scores for n groups defined by different
+          labels across p non-empty feature sets
+        """
         results = np.stack(list(results), axis=2)
         ci = confidence_interval(results, axis=2)
         mu = np.mean(results, axis=2)
@@ -346,8 +457,22 @@ class Sampled:
             self, n_iter, fmap, freduce, n_processes=None, fmap_kwargs=None,
             freduce_kwargs=None):
         """
+        generalized framework to carry out map-reduce sampling over resampled shared data
 
-        :return:
+        :param int n_iter: number of samples to draw
+        :param function fmap: function to map over samples of data, must take at least
+          one parameter n, the number of observations to draw in each sample
+        :param function freduce: function to merge and integrate the results of the
+          mapping function. The return value of this function is returned directly by run
+        :param int n_processes: number of processes in the multiprocessing Pool. If None,
+          this is set to the maximum number of concurrent processes supported by your
+          machine
+        :param dict fmap_kwargs:
+          additional keyword arguments for fmap
+        :param dict freduce_kwargs:
+          additional keyword arguments for fmap
+
+        :return: result of freduce
         """
         if fmap_kwargs is not None:
             fmap = partial(fmap, **fmap_kwargs)
@@ -355,5 +480,5 @@ class Sampled:
             freduce = partial(freduce, **freduce_kwargs)
 
         with closing(Pool(processes=n_processes, initializer=self._proc_init())) as pool:
-            results = pool.map(fmap, [self.n] * n_iter)
+            results = pool.map(fmap, [self.n_observations_per_sample] * n_iter)
         return freduce(results)
