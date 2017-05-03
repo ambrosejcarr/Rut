@@ -2,12 +2,14 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
+# todo rewrite as function of a Sampler object (inheritance?)
 def volcano(a, b, results, sampling_percentile=10, ax=None):
     """volcano is -log10 p-value against mean expression
 
     :param a:
     :param b:
     :param results:
+    :param sampling_percentile:
     :param ax:
     """
 
