@@ -15,29 +15,15 @@ class ScoreFeatureMagnitudes(sample.Sampled):
                 'feature_groups must be a dictionary of iterables containing features, '
                 'not %s' % repr(type(feature_groups)))
 
-        # map features to integer values
-        merged_features = np.array(list(reduce(np.union1d, feature_groups.values())))
-
-        # get intersection of features in sets and features in data
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", category=FutureWarning)
-            merged_features = merged_features[np.in1d(
-                merged_features, data.columns)]
-            if len(merged_features) == 0:
-                raise ValueError('Empty intersection of feature sets and data '
-                                 'features')
-
         # store numerical feature sets, exclude empty sets
         self._numerical_feature_sets = []
         self._feature_set_labels = []
         for k, fset in feature_groups.items():
-            fset_idx = np.where(np.in1d(merged_features, fset))[0]
+            fset = np.intersect1d(fset, data.columns)
+            fset_idx = np.where(np.in1d(data.columns, fset))[0]
             if fset_idx.shape[0] != 0:
                 self._numerical_feature_sets.append(fset_idx)
                 self._feature_set_labels.append(k)
-
-        # remove additional data that is not covered by feature_groups
-        data = data[merged_features]
 
         super().__init__(data, labels, *args, **kwargs)
 
