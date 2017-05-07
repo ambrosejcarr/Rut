@@ -47,7 +47,8 @@ class ScoreFeatureMagnitudes(sample.Sampled):
 
         results = np.zeros(
             (ssplits.shape[0] + 1, len(numerical_feature_sets)), dtype=float)
-        for i, arr in enumerate(np.split(sample_, ssplits, axis=0)):
+        for i in np.arange(ssplits.shape[0] + 1):
+            arr = sample_[n*i:n*(i+1)]
             for j, fset in enumerate(numerical_feature_sets):
                 results[i, j] = np.sum(arr[:, fset], axis=1).mean()
         return results

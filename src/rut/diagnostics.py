@@ -56,13 +56,17 @@ class StatisticsConfusionMatrix:
 
 class AnalysisByCellNumber:
 
-    def __init__(self, p_values_list, condition):
+    def __init__(self, p_values_list, condition, cell_number_labels=None):
         """
         :param [pd.Series] p_values_list: list of pandas series containing p-values
         :param pd.Series[bool] condition: true condition labels
         """
         self.p_values_list = p_values_list
         self.condition = condition
+        if cell_number_labels is not None:
+            self.cell_number_labels = cell_number_labels
+        else:
+            self.cell_number_labels = np.arange(p_values_list[0].shape)
 
     def recall_vs_cell_number(self, alpha):
         recall_values = []
@@ -78,3 +82,71 @@ class AnalysisByCellNumber:
                 StatisticsConfusionMatrix(p_values, self.condition).precision(alpha))
         return precision_values
 
+    def plot_precision_by_cell_number(self, alpha=0.05, **kwargs):
+        import rut.plot.differential_expression.diagnostic_curves as dc
+        precision = self.precision_vs_cell_number(alpha)
+        return dc.inverted_curve(
+            precision, self.cell_number_labels, ylabel='precision', xlabel='cell number',
+            **kwargs
+        )
+
+    def plot_recall_by_cell_number(self, alpha=0.05, **kwargs):
+        import rut.plot.differential_expression.diagnostic_curves as dc
+        recall = self.recall_vs_cell_number(alpha)
+        return dc.inverted_curve(
+            recall, self.cell_number_labels, ylabel='recall', xlabel='cell number',
+            **kwargs
+        )
+
+
+class MultiTestComparison:
+
+    def __init__(self, test_results, condition):
+        """
+
+        :param dict test_results:
+        :param true result labels condition:
+        """
+        pass
+
+    def tp_venn_diagram(self):
+        # number of comparisons should be at most three; pick best performing methods
+        # to do these comparisons.
+        raise NotImplementedError
+
+    def fp_venn_diagram(self):
+        raise NotImplementedError
+
+
+class DataDiagnostics:
+
+    def __init__(self, data):
+        """
+        This class contains several tests for data distribution which reveal data problems
+        that suggest the necessity of non-parametric testing.
+        """
+        self._data = data
+
+    def residual_variance_by_factor(self):
+        """
+        Display residual differences in variation across samples which would not be
+        captured by simple transformations of the mean (need to transform variance too!)
+        :return:
+        """
+        raise NotImplementedError
+
+    def display_factor_effect(self):
+        """
+        scatterplot of mean vs variance across factors?
+        :return:
+        """
+        raise NotImplementedError
+
+    def library_size_distribution(self, ax=None):
+        import rut.plot.diagnostics
+        library_size = self._data.sum(axis=1)
+        rut.plot.diagnostics.smoothed_histogram(
+            library_size, ax=ax, xlabel='molecules per cell')
+        return ax
+
+    # todo what else should I be adding here? q-q plots? other?

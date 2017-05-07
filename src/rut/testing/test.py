@@ -81,11 +81,72 @@ class TestScoreFeatureMagnitude(unittest.TestCase):
 
 class TestCluster(unittest.TestCase):
 
+    @classmethod
+    def setUpClass(cls):
+        m1 = np.zeros(100)
+        cov1 = np.diag(np.random.rand(100))
+        m2 = np.zeros(100) + 0.5
+        cov2 = np.diag(np.random.rand(100))
+        m3 = np.ones(100)
+        cov3 = np.diag(np.random.rand(100)) * 1.5
+
+        cls.data_ = np.concatenate([
+            np.random.multivariate_normal(m1, cov1, 100),
+            np.random.multivariate_normal(m2, cov2, 100),
+            np.random.multivariate_normal(m3, cov3, 100),
+        ], axis=0)
+
     def test_cluster(self):
-        data = pd.DataFrame(np.random.randint(0, 10, 10000).reshape(100, 100))
-        c = cluster.Cluster(data)
-        results = c.fit(4, 4)
-        print(results)
+        # draw data from three different multivariate gaussians
+        import matplotlib.pyplot as plt
+        import rut.plot.matrix
+
+        c = cluster.Cluster(self.data_)
+        c.fit(4, 4)
+
+        c.plot_confusion_matrix()
+        plt.savefig('test_confusion_matrix.png', dpi=150)
+
+        astr = c.score_association_strength()
+        rut.plot.matrix.clustered_symmetric_matrix(astr, trim=0)
+        plt.savefig('test_association_strength.png', dpi=150)
+
+    def test_cluster_no_parallel(self):
+        import matplotlib.pyplot as plt
+        import rut.plot.matrix
+
+        c = cluster.Cluster(self.data_)
+        c.fit_no_parallelism(4, 4)
+
+        c.plot_confusion_matrix()
+        plt.savefig('test_confusion_matrix.png', dpi=150)
+
+        astr = c.score_association_strength(n_iter=4)
+        rut.plot.matrix.clustered_symmetric_matrix(astr, trim=0)
+        plt.savefig('test_association_strength.png', dpi=150)
+
+class TestFisher(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        cls.background = set(list('abcdefghijklmnopqrstuvwxyz'))
+        cls.sets = [
+            set(list('abcdefghijkl')),
+            set(list('mnopqrstuvwx')),
+            set(list('yz')),
+            set(list('12345'))
+        ]
+        cls.test_sets = [
+            set(list('abcd')),
+            set(list('mnkj')),
+            set(list('12345')),
+            set(list('6789'))
+        ]
+
+    def test_fisher_test(self):
+        import rut.fisher_test
+        ft = rut.fisher_test.FisherTest(self.sets, self.background)
+        print(list(ft.fit(s) for s in self.test_sets))
 
 
 if __name__ == "__main__":

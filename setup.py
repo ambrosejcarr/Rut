@@ -28,6 +28,7 @@ setup(name='rut',
           'statsmodels',
           'nose2',
           'scikit-learn',
-          'matplotlib'],
+          'matplotlib',
+          'fastcluster'],
       )
 
