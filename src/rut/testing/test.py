@@ -3,6 +3,7 @@ import nose2
 import numpy as np
 import pandas as pd
 from rut.differential_expression import mannwhitneyu, kruskalwallis
+from rut.testing import empirical_variance
 from rut import score_feature_magnitude, cluster
 
 
@@ -124,6 +125,33 @@ class TestCluster(unittest.TestCase):
         astr = c.score_association_strength(n_iter=4)
         rut.plot.matrix.clustered_symmetric_matrix(astr, trim=0)
         plt.savefig('test_association_strength.png', dpi=150)
+
+
+class TestEmpiricalVariance(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        cls.x = np.array([
+            np.random.randint(0, 5, 10),  # lower than y
+            np.ones(10) * 100,  # large, takes up most of library size normalization
+            np.random.randint(5, 10, 10)  # higher than y
+        ]).T
+
+        cls.y = np.array([
+            np.random.randint(5, 10, 10),  # higher than y
+            np.ones(10) * 100,  # takes up most of library size normalization
+            np.random.randint(0, 5, 10)  # lower than y
+        ]).T
+
+        cls.data = pd.DataFrame(
+            data=np.concatenate([cls.x, cls.y], axis=0)
+        )
+        cls.labels = np.concatenate([np.ones(10), np.zeros(10)], axis=0)
+
+    def test_empirical_variance(self):
+        ev = empirical_variance.EmpiricalVariance(self.data, self.labels)
+        print(ev.fit())
+
 
 class TestFisher(unittest.TestCase):
 
