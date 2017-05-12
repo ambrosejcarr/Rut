@@ -2,7 +2,7 @@ import unittest
 import nose2
 import numpy as np
 import pandas as pd
-from rut.differential_expression import mannwhitneyu, kruskalwallis
+from rut.differential_expression import mannwhitneyu, kruskalwallis, wilcoxon_bf
 from rut.testing import empirical_variance
 from rut import score_feature_magnitude, cluster
 
@@ -60,7 +60,40 @@ class TestMannWhitneyU(unittest.TestCase):
         half = int(data.shape[0] / 2)
         labels = np.array((['21'] * half) + (['21_adj'] * half))
         mwu = mannwhitneyu.MannWhitneyU(data, labels)
-        print(mwu.fit(8, 8))
+        print(mwu.fit())
+
+
+class TestWilcoxonBF(unittest.TestCase):
+
+    def test_synthetic(self):
+        x = np.array([
+            np.random.randint(0, 5, 10),  # lower than y
+            np.ones(10) * 100,  # large, takes up most of library size normalization
+            np.random.randint(5, 10, 10)  # higher than y
+        ]).T
+
+        y = np.array([
+            np.random.randint(5, 10, 10),  # higher than y
+            np.ones(10) * 100,  # takes up most of library size normalization
+            np.random.randint(0, 5, 10)  # lower than y
+        ]).T
+
+        data = pd.DataFrame(
+            data=np.concatenate([x, y], axis=0)
+        )
+        labels = np.concatenate([np.ones(10), np.zeros(10)], axis=0)
+        wbf = wilcoxon_bf.WilcoxonBF(data, labels)
+        print(wbf.fit())
+
+    def test_at_scale(self):
+        data = pd.read_table(
+            '/Users/ambrose/google_drive/manuscripts/rut/data/r_comparisons'
+            '/cluster_21_vs_28_for_R.txt', index_col=0).T
+
+        half = int(data.shape[0] / 2)
+        labels = np.array((['21'] * half) + (['21_adj'] * half))
+        wbf = wilcoxon_bf.WilcoxonBF(data, labels)
+        print(wbf.fit())
 
 
 class TestScoreFeatureMagnitude(unittest.TestCase):

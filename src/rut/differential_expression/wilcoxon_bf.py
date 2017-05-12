@@ -2,6 +2,8 @@ import numpy as np
 from statsmodels.sandbox.stats.multicomp import multipletests
 from scipy.stats.mstats import count_tied_groups, rankdata
 from rut.differential_expression import differential_expression
+import rut.misc
+import pandas as pd
 
 
 class WilcoxonBF(differential_expression.DifferentialExpression):
@@ -38,6 +40,18 @@ class WilcoxonBF(differential_expression.DifferentialExpression):
           p-values
         """
 
+        def empirical_variance(rw, rb, mu_r, n):
+            """
+
+            :param np.ndarray rw: n samples x g genes within-sample ranks
+            :param np.ndarray rb: n samples x g genes between-sample ranks
+            :param np.ndarray mu_r: g genes mean ranks
+            :param int n: number of samples
+            :return:
+            """
+            s2 = (1 / (n - 1)) * np.sum((rb - rw - mu_r + ((n + 1) / 2)) ** 2, axis=0)
+            return s2 / n ** 2
+
         complete_data = cls.get_shared_data()
         array_splits = cls.get_shared_splits()
         assert array_splits.shape[0] == 1  # only have two classes
@@ -45,45 +59,30 @@ class WilcoxonBF(differential_expression.DifferentialExpression):
         # calculate U for x
         if xy.ndim == 1:
             xy = xy[:, np.newaxis]
-        ranks = rankdata(xy, axis=0)
+        ranks = rankdata(xy, axis=0)  # 2n x g
+        x_ranks = rankdata(xy[:n, :])  # n x g
+        y_ranks = rankdata(xy[n:, :])  # n x g
         del xy  # memory savings
-        nt = 2 * n
-        U = ranks[:n].sum(0) - n * (n + 1) / 2.
 
-        # get mean value
-        mu = (n ** 2) / 2.
+        # calculate variance
+        mean_rank = np.mean(ranks, axis=0)  # todo this can be computed faster, and is an int not an array
+        s2_x = empirical_variance(x_ranks, ranks[:n, :], mean_rank, n)
+        s2_y = empirical_variance(y_ranks, ranks[n:, :], mean_rank, n)
+        sigma = 2*n * ((s2_x / n) + (s2_y / n))
 
-        # get smaller u (convention) for reporting only
-        u = np.amin([U, n ** 2 - U], axis=0)
+        # calculate statistic
+        w = (1 / np.sqrt(2 * n) *
+             (np.mean(ranks[n:, :], axis=0) - np.mean(ranks[:n, :], axis=0)) / sigma)
 
-        sigsq = np.ones(ranks.shape[1]) * (nt ** 3 - nt) / 12.
+        return w
 
-        for i in np.arange(len(sigsq)):
-            ties = count_tied_groups(ranks[:, i])
-            sigsq[i] -= np.sum(v * (k ** 3 - k) for (k, v) in ties.items()) / 12.
-        sigsq *= n ** 2 / float(nt * (nt - 1))
-
-        # ignore division by zero warnings; they are properly dealt with by this test.
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            # note that in the case that sigsq is zero, and mu=U, this line will produce
-            # -inf. However, this z-score should be zero, as this is an artifact of
-            # continuity correction (subtraction of 1/2)
-            z = (U - 1 / 2. - mu) / np.sqrt(sigsq)
-
-        # correct infs
-        z[sigsq == 0] = 0
-
-        return np.vstack([u, z]).T
-
-
-    def mwu_reduce(self, results, alpha=0.05):
+    def _reduce(self, results, alpha=0.05):
         """
-        reduction function for Mann-Whitney U-test that processes the results from
-        mw_map into a results object
+        reduction function for Wilcoxon Behrens-Fisher test that processes the results
+        from self._map into a results object
 
         :param list results: output from mw_map function, a list of np.array objects
-          containing U-scores and z-scores.
+          containing z-scores
         :param float alpha: acceptable type-I error rate for BY (negative) FDR correction
 
         :return pd.DataFrame: contains:
@@ -96,15 +95,15 @@ class WilcoxonBF(differential_expression.DifferentialExpression):
         """
 
         results = np.stack(results)
-        ci = misc.confidence_interval(results[:, :, 1])
-
+        ci = rut.misc.confidence_interval(results)
+        p = rut.misc.z_to_p(results.sum(axis=0) / np.sqrt(results.shape[0]))  # higher power fisher method
         results = pd.DataFrame(
-            data=np.concatenate([np.median(results, axis=0), ci], axis=1),
+            data=np.concatenate([np.median(results, axis=0)[:, None], ci, p[:, None]], axis=1),
             index=self._features,
-            columns=['U', 'z_approx', 'z_lo', 'z_hi'])
+            columns=['W', 'W_low', 'W_high', 'p'])
 
         # calculate p-values for median z-score
-        results['p'] = misc.z_to_p(results['z_approx'])
+        # results['p'] = rut.misc.z_to_p(results['W'])  # median z
 
         # add multiple-testing correction
         results['q'] = multipletests(results['p'], alpha=alpha, method='fdr_by')[1]
@@ -113,18 +112,17 @@ class WilcoxonBF(differential_expression.DifferentialExpression):
         results.iloc[:, 1:4] = np.round(results.iloc[:, 1:4], 2)
         return results
 
-
     def fit(self, n_iter=50, n_processes=None, alpha=0.05):
         """
-        Carry out a Mann-Whitney U-test
+        Carry out a Behrens-Fisher test
 
         :return:
         """
         self.result_ = self.run(
             n_iter=n_iter,
             n_processes=n_processes,
-            fmap=self.mwu_map,
-            freduce=self.mwu_reduce,
+            fmap=self._map,
+            freduce=self._reduce,
             freduce_kwargs=dict(alpha=alpha)
         )
 
