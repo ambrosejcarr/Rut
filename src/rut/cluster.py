@@ -96,7 +96,7 @@ class Cluster(sample.Sampled):
 
         return self.cluster_labels_
 
-    def fit_no_parallelism(self, n_iter, n_processes=None, save_confusion_matrix=True):
+    def fit_no_parallelism(self, n_iter, n_processes=1, save_confusion_matrix=True):
         """
         Fit consensus clustering across n_iter phenograph runs. Note that unless
         n_processes is 1, phenograph is still parallelized.

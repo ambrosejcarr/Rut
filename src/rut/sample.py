@@ -14,7 +14,7 @@ from functools import partial
 
 class Sampled:
 
-    def __init__(self, data, labels=None, is_sorted=False):
+    def __init__(self, data, labels=None, is_sorted=False, max_obs_per_sample=500):
         """
 
         :param pd.DataFrame | np.array data: m observations x p features array or
@@ -64,6 +64,8 @@ class Sampled:
 
             self.n_samples_to_draw = min(
                 g.shape[0] for g in np.split(observation_sizes, splits_))
+            if max_obs_per_sample is not None:
+                self.n_samples_to_draw = min(max_obs_per_sample, self.n_samples_to_draw)
 
             # expose splits
             self.splits = np.ctypeslib.as_ctypes(splits_)
