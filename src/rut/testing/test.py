@@ -1,10 +1,12 @@
+import os
 import unittest
 import nose2
 import numpy as np
 import pandas as pd
-from rut.differential_expression import mannwhitneyu, kruskalwallis, wilcoxon_bf
+from rut.differential_expression import mannwhitneyu, kruskalwallis, wilcoxon_bf, welchs_t
 from rut.testing import empirical_variance
 from rut import score_feature_magnitude, cluster
+
 
 
 class TestKruskalWallis(unittest.TestCase):
@@ -63,37 +65,131 @@ class TestMannWhitneyU(unittest.TestCase):
         print(mwu.fit())
 
 
-class TestWilcoxonBF(unittest.TestCase):
+class TestWelchsT(unittest.TestCase):
 
     def test_synthetic(self):
+        n = 100
         x = np.array([
-            np.random.randint(0, 5, 10),  # lower than y
-            np.ones(10) * 100,  # large, takes up most of library size normalization
-            np.random.randint(5, 10, 10)  # higher than y
+            np.random.randint(0, 5, n),  # lower than y
+            np.ones(n) * 100,  # large, takes up most of library size normalization
+            np.random.randint(5, 10, n)  # higher than y
         ]).T
 
         y = np.array([
-            np.random.randint(5, 10, 10),  # higher than y
-            np.ones(10) * 100,  # takes up most of library size normalization
-            np.random.randint(0, 5, 10)  # lower than y
+            np.random.randint(5, 10, n),  # higher than y
+            np.ones(n) * 100,  # takes up most of library size normalization
+            np.random.randint(0, 5, n)  # lower than y
         ]).T
 
         data = pd.DataFrame(
             data=np.concatenate([x, y], axis=0)
         )
-        labels = np.concatenate([np.ones(10), np.zeros(10)], axis=0)
+        labels = np.concatenate([np.ones(n), np.zeros(n)], axis=0)
+        wtt = welchs_t.WelchsT(data, labels)
+        print(wtt.fit_noparallel())
+
+    def test_at_scale(self):
+        data = pd.read_table(os.path.expanduser(
+            '~/google_drive/manuscripts/rut/data/r_comparisons'
+            '/cluster_21_vs_synthetic_ds_0.75.txt'), index_col=0).T
+
+        half = int(data.shape[0] / 2)
+        labels = np.array((['21'] * half) + (['21_adj'] * half))
+        wtt = welchs_t.WelchsT(data, labels)
+        print(wtt.fit())
+
+    def test_at_scale_noparallel(self):
+        data = pd.read_table(os.path.expanduser(
+            '~/google_drive/manuscripts/rut/data/r_comparisons'
+            '/cluster_21_vs_synthetic_ds_0.75.txt'), index_col=0).T
+
+        half = int(data.shape[0] / 2)
+        labels = np.array((['21'] * half) + (['21_adj'] * half))
+        wtt = welchs_t.WelchsT(data, labels)
+        print(wtt.fit())
+
+
+class TestWilcoxonBF(unittest.TestCase):
+
+    def test_synthetic(self):
+        n = 100
+        x = np.array([
+            np.random.randint(0, 5, n),  # lower than y
+            np.ones(n) * 100,  # large, takes up most of library size normalization
+            np.random.randint(5, 10, n)  # higher than y
+        ]).T
+
+        y = np.array([
+            np.random.randint(5, 10, n),  # higher than y
+            np.ones(n) * 100,  # takes up most of library size normalization
+            np.random.randint(0, 5, n)  # lower than y
+        ]).T
+
+        data = pd.DataFrame(
+            data=np.concatenate([x, y], axis=0)
+        )
+        labels = np.concatenate([np.ones(n), np.zeros(n)], axis=0)
         wbf = wilcoxon_bf.WilcoxonBF(data, labels)
         print(wbf.fit())
 
     def test_at_scale(self):
-        data = pd.read_table(
-            '/Users/ambrose/google_drive/manuscripts/rut/data/r_comparisons'
-            '/cluster_21_vs_28_for_R.txt', index_col=0).T
+        data = pd.read_table(os.path.expanduser(
+            '~/google_drive/manuscripts/rut/data/r_comparisons'
+            '/cluster_21_vs_synthetic_ds_0.75.txt'), index_col=0).T
 
         half = int(data.shape[0] / 2)
         labels = np.array((['21'] * half) + (['21_adj'] * half))
         wbf = wilcoxon_bf.WilcoxonBF(data, labels)
         print(wbf.fit())
+
+    def test_at_scale_noparallel(self):
+        data = pd.read_table(os.path.expanduser(
+            '~/google_drive/manuscripts/rut/data/r_comparisons'
+            '/cluster_21_vs_synthetic_ds_0.75.txt'), index_col=0).T
+
+        half = int(data.shape[0] / 2)
+        labels = np.array((['21'] * half) + (['21_adj'] * half))
+        wbf = wilcoxon_bf.WilcoxonBF(data, labels)
+        print(wbf.fit_noparallel())
+
+    def test_author_example(self):
+        from scipy.stats.mstats import rankdata
+        x = np.array([1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 2, 4, 1, 1])[:, None]
+        y = np.array([3, 3, 4, 3, 1, 2, 3, 1, 1, 5, 4])[:, None]
+
+        def empirical_variance(within_rank, total_rank, mean_total_rank, n, N):
+            """
+
+            :param np.ndarray within_rank: n samples x g genes within-sample ranks
+            :param np.ndarray total_rank: n samples x g genes between-sample ranks
+            :param np.ndarray mean_total_rank: g genes mean ranks
+            :param int n: number of samples in this group
+            :param int N: number of samples in all groups
+            :return:
+            """
+            adjustment_factor = (n + 1) / 2
+            ranks = total_rank - within_rank - mean_total_rank + adjustment_factor
+            z = 1 / (n - 1)
+            s2 = z * np.sum(ranks ** 2, axis=0)
+            sigma2 = s2 / (N - n) ** 2
+            return sigma2
+
+        def wbf(xy, n_x, n_y):
+            x_ranks = rankdata(xy[:n_x, :], axis=0)
+            y_ranks = rankdata(xy[n_x:, :], axis=0)
+            N = n_x + n_y
+            xy_ranks = rankdata(xy, axis=0)
+            x_mean_rank = np.mean(xy_ranks[:n_x, :], axis=0)
+            y_mean_rank = np.mean(xy_ranks[n_x:, :], axis=0)
+            sigma2_x = empirical_variance(x_ranks, xy_ranks[:n_x, :], x_mean_rank, n_x, N)
+            sigma2_y = empirical_variance(y_ranks, xy_ranks[n_x:, :], y_mean_rank, n_y, N)
+            sigma_pool = np.sqrt(N * (sigma2_x / n_x + sigma2_y / n_y))
+            W = 1 / np.sqrt(N) * ((y_mean_rank - x_mean_rank) / sigma_pool)
+            return W
+
+        res = wbf(np.concatenate([x, y], axis=0), len(x), len(y))
+        print(res)
+        self.assertAlmostEqual(np.round(res[0], 3), 3.137)
 
 
 class TestScoreFeatureMagnitude(unittest.TestCase):

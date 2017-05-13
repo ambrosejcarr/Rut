@@ -6,7 +6,7 @@ import rut.misc
 import pandas as pd
 
 
-class WilcoxonBF(differential_expression.DifferentialExpression):
+class WelchsT(differential_expression.DifferentialExpression):
 
     def __init__(self, *args, **kwargs):
         """
@@ -28,7 +28,7 @@ class WilcoxonBF(differential_expression.DifferentialExpression):
     @classmethod
     def _map(cls, n):
         """
-        Wilcoxon Behrens-Fisher test between classes defind by global variables data
+        Welch's T-test test between classes defind by global variables data
         and splits
 
         Designed to be mapped to a multiprocessing pool. Draws a sample of size n from
@@ -40,52 +40,30 @@ class WilcoxonBF(differential_expression.DifferentialExpression):
           p-values
         """
 
-        def empirical_variance(within_rank, total_rank, mean_total_rank, n, N):
-            """
-
-            :param np.ndarray within_rank: n samples x g genes within-sample ranks
-            :param np.ndarray total_rank: n samples x g genes between-sample ranks
-            :param np.ndarray mean_total_rank: g genes mean ranks
-            :param int n: number of samples in this group
-            :param int N: number of samples in all groups
-            :return:
-            """
-            adjustment_factor = (n + 1) / 2
-            ranks = total_rank - within_rank - mean_total_rank + adjustment_factor
-            z = 1 / (n - 1)
-            s2 = z * np.sum(ranks ** 2, axis=0)
-            sigma2 = s2 / (N - n) ** 2
-            return sigma2
-
-        def wbf(xy, n_x, n_y):
-            x_ranks = rankdata(xy[:n_x, :], axis=0)
-            y_ranks = rankdata(xy[n_x:, :], axis=0)
-            N = n_x + n_y
-            xy_ranks = rankdata(xy, axis=0)
-            x_mean_rank = np.mean(xy_ranks[:n_x, :], axis=0)
-            y_mean_rank = np.mean(xy_ranks[n_x:, :], axis=0)
-            sigma2_x = empirical_variance(x_ranks, xy_ranks[:n_x, :], x_mean_rank, n_x, N)
-            sigma2_y = empirical_variance(y_ranks, xy_ranks[n_x:, :], y_mean_rank, n_y, N)
-            sigma_pool = np.sqrt(N * (sigma2_x / n_x + sigma2_y / n_y))
-            W = 1 / np.sqrt(N) * ((y_mean_rank - x_mean_rank) / sigma_pool)
-            return W
+        def wtt(x, y, n_x, n_y):
+            x_mu = x.mean(axis=0)
+            y_mu = y.mean(axis=0)
+            x_var = np.var(x, axis=0)
+            y_var = np.var(y, axis=0)
+            z = (x_mu - y_mu) / np.sqrt((x_var / n_x) + (y_var / n_y))
+            return z
 
         complete_data = cls.get_shared_data()
         array_splits = cls.get_shared_splits()
         assert array_splits.shape[0] == 1  # only have two classes
         xy = cls._draw_sample_with_replacement(complete_data, n, array_splits)
-        # calculate U for x
+
         if xy.ndim == 1:
             xy = xy[:, np.newaxis]
 
         # calculate test statistic
         n_x = array_splits[0]
         n_y = xy.shape[0] - n_x
-        return wbf(xy, n_x, n_y)
+        return wtt(xy[:n_x, :], xy[n_x:, :], n_x, n_y)
 
     def _reduce(self, results, alpha=0.05):
         """
-        reduction function for Wilcoxon Behrens-Fisher test that processes the results
+        reduction function for Welch's T-test test that processes the results
         from self._map into a results object
 
         :param list results: output from mw_map function, a list of np.array objects
@@ -108,8 +86,8 @@ class WilcoxonBF(differential_expression.DifferentialExpression):
         results = pd.DataFrame(
             data=np.concatenate([np.mean(results, axis=0)[:, None], ci], axis=1),
             index=self._features,
-            columns=['W', 'W_low', 'W_high'])
-        results['p'] = rut.misc.z_to_p(results['W'])  # mean z
+            columns=['t', 't_low', 't_high'])
+        results['p'] = rut.misc.z_to_p(results['t'])  # mean z
 
         # add multiple-testing correction
         results['q'] = multipletests(results['p'], alpha=alpha, method='fdr_by')[1]
@@ -120,7 +98,7 @@ class WilcoxonBF(differential_expression.DifferentialExpression):
 
     def fit(self, n_iter=50, n_processes=None, alpha=0.05):
         """
-        Carry out a Behrens-Fisher test
+        Carry out a Welch's T-test
 
         :return:
         """
