@@ -61,9 +61,7 @@ class WelchsT(differential_expression.DifferentialExpression):
             xy = xy[:, np.newaxis]
 
         # calculate test statistic
-        n_x = array_splits[0]
-        n_y = xy.shape[0] - n_x
-        return wtt(xy[:n_x, :], xy[n_x:, :], n_x, n_y)
+        return wtt(xy[:n, :], xy[n:, :], n, n)  # samples are always size n
 
     def _reduce(self, results, alpha=0.05):
         """
