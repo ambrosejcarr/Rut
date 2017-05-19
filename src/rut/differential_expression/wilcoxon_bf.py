@@ -83,9 +83,7 @@ class WilcoxonBF(differential_expression.DifferentialExpression):
             xy = xy[:, np.newaxis]
 
         # calculate test statistic
-        n_x = array_splits[0]
-        n_y = xy.shape[0] - n_x
-        return wbf(xy, n_x, n_y)
+        return wbf(xy, n, n)  # n_x and n_y are both equal to the sampling size
 
     def _reduce(self, results, alpha=0.05):
         """
