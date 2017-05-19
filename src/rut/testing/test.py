@@ -4,6 +4,7 @@ import nose2
 import numpy as np
 import pandas as pd
 from rut.differential_expression import mannwhitneyu, kruskalwallis, wilcoxon_bf, welchs_t
+from rut.testing import external_comparisons
 from rut.testing import empirical_variance, generate
 from rut import score_feature_magnitude, cluster
 
@@ -326,9 +327,14 @@ class TestGenerate(unittest.TestCase):
         cls.data = pd.DataFrame(
             data=np.concatenate([cls.x, cls.y], axis=0)
         )
-        cls.labels = np.concatenate([np.ones(n), np.zeros(n)], axis=0)
+        # cls.labels = np.concatenate([np.ones(n), np.zeros(n)], axis=0)
         cls.tmpdir = os.environ['TMPDIR']
 
+        cls.synth = generate.SyntheticTest.from_dataset(
+            pd.DataFrame(cls.data), [0, 1], save=cls.tmpdir + 'test_synthetic',
+            additional_downsampling=0.45)
+
+    @unittest.skip('trivial development test')
     def test_synthetic(self):
         df, effects = generate.SyntheticTest._synthesize(
             pd.DataFrame(self.x), [0, 1], save=self.tmpdir + 'test_synthetic',
@@ -338,50 +344,48 @@ class TestGenerate(unittest.TestCase):
         print(df.loc[1, ].sum())
 
     def test_synthetic_mast(self):
-        mast_script = '~/projects/RutR/R/runMAST.R'
-        save_stem = self.tmpdir + 'test_synthetic'
-        results_filename = self.tmpdir + 'test_synthetic_runMast.csv'
-        synth = generate.SyntheticTest.from_dataset(
-            pd.DataFrame(self.x), [0, 1], save=save_stem,
-            additional_downsampling=0.45)
-        res = synth.test_method(mast_script, results_filename)
+        script = '~/projects/RutR/R/runMAST.R'
+        results_filename = self.tmpdir + 'test_synthetic_mast_results.csv'
+        res = self.synth.test_method(script, results_filename)
         print(res)
 
-    def test_synthetic_edgeR(self):
-        mast_script = '~/projects/RutR/R/runEdgeR.R'
-        save_stem = self.tmpdir + 'test_synthetic'
-        results_filename = self.tmpdir + 'test_synthetic_runEdgeR.csv'
-        bigger_data = np.hstack([self.x] * 4)
-        synth = generate.SyntheticTest.from_dataset(
-            pd.DataFrame(bigger_data), [0, 1], save=save_stem,
-            additional_downsampling=0.45)
-        res = synth.test_method(mast_script, results_filename)
+    def test_synthetic_edger(self):
+        script = '~/projects/RutR/R/runEdgeR.R'
+        results_filename = self.tmpdir + 'test_synthetic_edger_results.csv'
+        bigger_data = np.hstack([self.x] * 4)  # edgeR complains if it doesn't have lots of data
+        res = self.synth.test_method(script, results_filename)
         print(res)
 
-    def test_synthetic_SCDE(self):
+    @unittest.skip('takes 60s to run on test data, fails due to small gene number')
+    def test_synthetic_scde(self):
         mast_script = '~/projects/RutR/R/runSCDE.R'
-        save_stem = self.tmpdir + 'test_synthetic'
-        results_filename = self.tmpdir + 'test_synthetic_runSCDE.csv'
-        synth = generate.SyntheticTest.from_dataset(
-            pd.DataFrame(self.data), [0, 1], save=save_stem,
-            additional_downsampling=0.45)
-        res = synth.test_method(mast_script, results_filename)
+        results_filename = self.tmpdir + 'test_synthetic_SCDE_results.csv'  # this will fail unless has 2000 genes
+        res = self.synth.test_method(mast_script, results_filename)
         print(res)
 
     def test_synthetic_mwu(self):
-
-        save_stem = self.tmpdir + 'test_synthetic'
-        results_filename = self.tmpdir + 'test_synthetic_runMWU.csv'
-        synth = generate.SyntheticTest.from_dataset(
-            pd.DataFrame(self.data), [0, 1], save=save_stem,
-            additional_downsampling=0.45)
-        res = synth.test_method(
+        results_filename = self.tmpdir + 'test_synthetic_rmwu_results.csv'
+        res = self.synth.test_method(
             mannwhitneyu.MannWhitneyU, results_filename)
         print(res)
 
+    def test_synthetic_wbf(self):
+        results_filename = self.tmpdir + 'test_synthetic_rwbf_results.csv'
+        res = self.synth.test_method(
+            wilcoxon_bf.WilcoxonBF, results_filename)
+        print(res)
 
+    def test_synthetic_wtt(self):
+        results_filename = self.tmpdir + 'test_synthetic_rwtt_results.csv'
+        res = self.synth.test_method(
+            welchs_t.WelchsT, results_filename)
+        print(res)
 
-
+    def test_synthetic_kartik_binomial(self):
+        results_filename = self.tmpdir + 'test_synthetic_binomial_results.csv'
+        res = self.synth.test_method(
+            external_comparisons.BinomialTest, results_filename)
+        print(res)
 
 
 if __name__ == "__main__":

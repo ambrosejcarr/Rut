@@ -70,3 +70,25 @@ def kartik_test(a, b):
          'p': p,
          'q': q}, index=a.columns)
 
+
+class BinomialTest:
+
+    def __init__(self, data, labels):
+        """
+        Carry out a binomial test on data between groups given by labels
+
+        :param pd.DataFrame data:
+        :param pd.Series | np.ndarray labels:
+        """
+
+        self.data = data
+        self.labels = labels
+        if np.unique(labels).shape[0] != 2:
+            raise ValueError('Binomial Test can only be applied to two groups, please use kruskalwallis for multi-'
+                             'group comparisons')
+
+    def fit(self):
+        a, b = np.unique(self.labels)
+        is_a = self.labels == a
+        is_b = self.labels == b
+        return kartik_test(self.data.loc[is_a, :], self.data.loc[is_b, :])
