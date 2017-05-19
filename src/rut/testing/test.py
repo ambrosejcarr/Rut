@@ -353,7 +353,10 @@ class TestGenerate(unittest.TestCase):
         script = '~/projects/RutR/R/runEdgeR.R'
         results_filename = self.tmpdir + 'test_synthetic_edger_results.csv'
         bigger_data = np.hstack([self.x] * 4)  # edgeR complains if it doesn't have lots of data
-        res = self.synth.test_method(script, results_filename)
+        big_synth = generate.SyntheticTest.from_dataset(
+            pd.DataFrame(bigger_data), [0, 1], save=self.tmpdir + 'test_synthetic',
+            additional_downsampling=0.45)
+        res = big_synth.test_method(script, results_filename)
         print(res)
 
     @unittest.skip('takes 60s to run on test data, fails due to small gene number')
