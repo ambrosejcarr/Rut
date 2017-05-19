@@ -12,10 +12,14 @@ class MannWhitneyU(differential_expression.DifferentialExpression):
     def __init__(self, *args, **kwargs):
         """
 
-        # todo enumerate actual arguments from super class too
-        # todo add plotting functions
-        :param args:
-        :param kwargs:
+        :param pd.DataFrame | np.array data: m observations x p features array or
+          dataframe
+        :param np.ndarray labels:  condition labels that separate cells into units of
+          comparison
+        :param bool is_sorted: if True, no sorting is done of data or labels
+        :param int max_obs_per_sample: hard ceiling on the number of observations to
+          take for each sample. Useful for constraining memory usage
+
         """
         super().__init__(*args, **kwargs)
         if self._labels is None:

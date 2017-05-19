@@ -22,6 +22,8 @@ class Sampled:
         :param np.ndarray labels:  condition labels that separate cells into units of
           comparison
         :param bool is_sorted: if True, no sorting is done of data or labels
+        :param int max_obs_per_sample: hard ceiling on the number of observations to
+          take for each sample. Useful for constraining memory usage
         """
 
         # check input types

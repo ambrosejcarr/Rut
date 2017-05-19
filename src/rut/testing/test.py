@@ -4,7 +4,7 @@ import nose2
 import numpy as np
 import pandas as pd
 from rut.differential_expression import mannwhitneyu, kruskalwallis, wilcoxon_bf, welchs_t
-from rut.testing import empirical_variance
+from rut.testing import empirical_variance, generate
 from rut import score_feature_magnitude, cluster
 
 
@@ -304,6 +304,84 @@ class TestFisher(unittest.TestCase):
         import rut.fisher_test
         ft = rut.fisher_test.FisherTest(self.sets, self.background)
         print(list(ft.fit(s) for s in self.test_sets))
+
+
+class TestGenerate(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        n = 500
+        cls.x = np.array([
+            np.random.randint(0, 5, n),  # lower than y
+            np.ones(n) * 100,  # large, takes up most of library size normalization
+            np.random.randint(5, 10, n)  # higher than y
+        ]).T
+
+        cls.y = np.array([
+            np.random.randint(5, 10, n),  # higher than y
+            np.ones(n) * 100,  # takes up most of library size normalization
+            np.random.randint(0, 5, n)  # lower than y
+        ]).T
+
+        cls.data = pd.DataFrame(
+            data=np.concatenate([cls.x, cls.y], axis=0)
+        )
+        cls.labels = np.concatenate([np.ones(n), np.zeros(n)], axis=0)
+        cls.tmpdir = os.environ['TMPDIR']
+
+    def test_synthetic(self):
+        df, effects = generate.SyntheticTest._synthesize(
+            pd.DataFrame(self.x), [0, 1], save=self.tmpdir + 'test_synthetic',
+            additional_downsampling=0.5)
+        # 0 should be ~2x 1
+        print(df.loc[0, :].sum())
+        print(df.loc[1, ].sum())
+
+    def test_synthetic_mast(self):
+        mast_script = '~/projects/RutR/R/runMAST.R'
+        save_stem = self.tmpdir + 'test_synthetic'
+        results_filename = self.tmpdir + 'test_synthetic_runMast.csv'
+        synth = generate.SyntheticTest.from_dataset(
+            pd.DataFrame(self.x), [0, 1], save=save_stem,
+            additional_downsampling=0.45)
+        res = synth.test_method(mast_script, results_filename)
+        print(res)
+
+    def test_synthetic_edgeR(self):
+        mast_script = '~/projects/RutR/R/runEdgeR.R'
+        save_stem = self.tmpdir + 'test_synthetic'
+        results_filename = self.tmpdir + 'test_synthetic_runEdgeR.csv'
+        bigger_data = np.hstack([self.x] * 4)
+        synth = generate.SyntheticTest.from_dataset(
+            pd.DataFrame(bigger_data), [0, 1], save=save_stem,
+            additional_downsampling=0.45)
+        res = synth.test_method(mast_script, results_filename)
+        print(res)
+
+    def test_synthetic_SCDE(self):
+        mast_script = '~/projects/RutR/R/runSCDE.R'
+        save_stem = self.tmpdir + 'test_synthetic'
+        results_filename = self.tmpdir + 'test_synthetic_runSCDE.csv'
+        synth = generate.SyntheticTest.from_dataset(
+            pd.DataFrame(self.data), [0, 1], save=save_stem,
+            additional_downsampling=0.45)
+        res = synth.test_method(mast_script, results_filename)
+        print(res)
+
+    def test_synthetic_mwu(self):
+
+        save_stem = self.tmpdir + 'test_synthetic'
+        results_filename = self.tmpdir + 'test_synthetic_runMWU.csv'
+        synth = generate.SyntheticTest.from_dataset(
+            pd.DataFrame(self.data), [0, 1], save=save_stem,
+            additional_downsampling=0.45)
+        res = synth.test_method(
+            mannwhitneyu.MannWhitneyU, results_filename)
+        print(res)
+
+
+
+
 
 
 if __name__ == "__main__":
