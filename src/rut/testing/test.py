@@ -391,5 +391,29 @@ class TestGenerate(unittest.TestCase):
         print(res)
 
 
+class TestGenerateSimple(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        n = 500
+        cls.x = np.array([
+            np.random.randint(0, 5, n),  # lower than y
+            np.ones(n) * 100,  # large, takes up most of library size normalization
+            np.random.randint(5, 10, n)  # higher than y
+        ]).T
+
+        cls.tmpdir = os.environ['TMPDIR']
+
+        cls.synth = generate.SimpleTest.from_dataset(
+            pd.DataFrame(cls.x), save=cls.tmpdir + 'test_synthetic_simple',
+            additional_downsampling=0.5, keep_fraction_genes=.5)
+
+    def test_synthetic_simple_mwu(self):
+        results_filename = self.tmpdir + 'test_synthetic_simple_rmwu.csv'
+        res = self.synth.test_method(
+            mannwhitneyu.MannWhitneyU, results_filename)
+        print(res)
+
+
 if __name__ == "__main__":
     nose2.main()

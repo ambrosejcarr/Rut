@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 from statsmodels.sandbox.stats.multicomp import multipletests
 from scipy.stats.mstats import count_tied_groups, rankdata
-from rut import misc
+import rut.misc
 from rut.differential_expression import differential_expression
 
 
@@ -98,7 +98,7 @@ class MannWhitneyU(differential_expression.DifferentialExpression):
         """
 
         results = np.stack(results)
-        ci = misc.confidence_interval(results[:, :, 1])
+        ci = rut.misc.confidence_interval(results[:, :, 1])
 
         results = pd.DataFrame(
             data=np.concatenate([np.median(results, axis=0), ci], axis=1),
@@ -106,7 +106,7 @@ class MannWhitneyU(differential_expression.DifferentialExpression):
             columns=['U', 'z_approx', 'z_lo', 'z_hi'])
 
         # calculate p-values for median z-score
-        results['p'] = misc.z_to_p(results['z_approx'])
+        results['p'] = rut.misc.z_to_p(results['z_approx'])
 
         # add multiple-testing correction
         results['q'] = multipletests(results['p'], alpha=alpha, method='fdr_by')[1]

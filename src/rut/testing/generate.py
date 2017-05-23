@@ -5,6 +5,7 @@ import pandas as pd
 from collections import defaultdict
 from collections.abc import Callable
 from subprocess import Popen, PIPE
+from rut.sample import Sampled
 
 
 class SyntheticTest:
@@ -41,7 +42,7 @@ class SyntheticTest:
         return cls(data_name, effects_name)
 
     @staticmethod
-    def _synthesize(data, labels, save=None, additional_downsampling=1):
+    def _synthesize(data, labels, save=None, additional_downsampling=1.):
         """
         return a synthetically adjusted sample to pair with the input sample for
         DE analysis
@@ -119,7 +120,7 @@ class SyntheticTest:
         synthetic = synthetic[data.columns]  # reorder columns
 
         # add any additional downsampling
-        if additional_downsampling < 1:
+        if additional_downsampling < 1.:
             synthetic = synthetic.mul(additional_downsampling)
             p = np.random.sample(synthetic.shape)
             synthetic = (synthetic % 1 > p).astype(int) + np.floor(synthetic)
@@ -182,3 +183,69 @@ class SyntheticTest:
 
     def test_all_de_methods(self):
         raise NotImplementedError  # todo implement me
+
+
+class SimpleTest(SyntheticTest):
+
+    def __init__(self, *args, **kwargs):
+        """
+
+        :param str data: filename pointing to a .csv file containing synthetic data over
+          two classes, used to test various methods
+        :param str effects:  filename pointing to a .p file containing the effects that
+          have been induced in data
+
+        """
+        super().__init__(*args, **kwargs)
+
+    @staticmethod
+    def downsample(data, downsampling_value=0.5, keep_fraction_genes=1.):
+        """
+
+        :param pd.DataFrame data: data to downsample
+        :param float downsampling_value: percentage of data to retain
+        :param float keep_fraction_genes: percentage of genes to retain. Note that in normal cirumstances,
+          one would want to avoid doing this type of subsetting as it changes the data distribution. However,
+          in this synthetic case, it is acceptable to do this to speed up the data generation.
+        :return:
+        """
+        # normalize the data, then draw a sample
+        if keep_fraction_genes < 1.:
+            idx = np.floor(np.linspace(0, data.shape[1] - 1, np.floor(data.shape[1] * 0.5).astype(int))).astype(int)
+            data = data.iloc[:, idx]
+        comparison = data.mul(downsampling_value)
+        comparison = pd.DataFrame(
+            Sampled._draw_sample(comparison.values),
+            index=data.index,
+            columns=data.columns)
+        labeled_index = [0] * data.shape[0] + [1] * comparison.shape[0]
+        merged = pd.concat([data, comparison], axis=0)
+        merged.index = labeled_index
+
+        # effects are all 0
+        effects = {0: list(merged.columns)}
+
+        return merged, effects
+
+    @classmethod
+    def from_dataset(cls, data, save, additional_downsampling=0.5, keep_fraction_genes=1., labels=None):
+        """
+
+        :param pd.DataFrame data: dataframe containing m cells x n genes to use as basis for synthetic data generation
+        :param str save: file stem; location to save data
+        :param additional_downsampling: downsampling to add to the sample to induce a
+          change in the sampling rate, as is often observed in single-cell data
+        :param keep_fraction_genes: retain this fraction of genes when generating synthetic data
+        :param list labels: Not used
+
+        :return SyntheticTest:  instance of a synthetic test class
+        """
+
+        merged, effects = cls.downsample(data, additional_downsampling, keep_fraction_genes)
+        data_name = save + '_ds_{:.2f}.csv'.format(additional_downsampling)
+        effects_name = save + '_ds_{:.2f}_labels.p'.format(additional_downsampling)
+        merged.to_csv(data_name)
+        with open(effects_name, 'wb') as f:
+            pickle.dump(effects, f)
+
+        return cls(data_name, effects_name)

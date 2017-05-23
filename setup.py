@@ -20,7 +20,7 @@ setup(name='rut',
       author='Ambrose J. Carr',
       author_email='mail@ambrosejcarr.com',
       package_dir={'': 'src'},
-      packages=['Rut'],
+      packages=['rut', 'rut.testing', 'rut.plot', 'rut.differential_expression'],
       install_requires=[
           'numpy',
           'pandas>=0.18.1',
@@ -29,6 +29,6 @@ setup(name='rut',
           'nose2',
           'scikit-learn',
           'matplotlib',
-          'fastcluster'],
+          'fastcluster',
+          'tables'],
       )
-
