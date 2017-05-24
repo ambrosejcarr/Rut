@@ -12,5 +12,4 @@ def set_style(style='default'):
         plt.style.use('fivethirtyeight')
         mpl.rcParams['font.family'] = 'monospace'
     if style is 'paper':
-        plt.style.use('default')
-        pass  # defaults for mpl 2.0 are good for papers!
+        plt.style.use('default')  # mpl 2.0 defaults are good for papers

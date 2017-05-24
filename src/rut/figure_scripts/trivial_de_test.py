@@ -24,8 +24,9 @@ def main(data, save, downsampling=0.5, keep_genes=0.5):
 
     methods = {
         'r-MWU': rut.differential_expression.mannwhitneyu.MannWhitneyU,
+        'MWU': rut.testing.external_comparisons.MannWhitneyU,
         'MAST':  '~/projects/RutR/R/runMAST.R',
-        'SCDE': '~/projects/RutR/R/runSCDE.R',
+        # 'SCDE': '~/projects/RutR/R/runSCDE.R',  # not working right now. Go R. Wew.
         'edgeR': '~/projects/RutR/R/runEdgeR.R',
         'binomial': rut.testing.external_comparisons.BinomialTest,
     }

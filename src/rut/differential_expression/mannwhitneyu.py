@@ -29,23 +29,14 @@ class MannWhitneyU(differential_expression.DifferentialExpression):
                 'Labels must contain only two categories for MannWhitneyU Testing. '
                 'Please use KruskalWallis for poly-sample comparisons')
 
-    @classmethod
-    def mwu_map(cls, n):
-        """Mann-Whitney U-test between classes defind by global variables data and splits
+    @staticmethod
+    def mwu(xy, n):
+        """Compute the Mann-Whitney U test between groups x and y having equal numbers of observations n
 
-        Designed to be mapped to a multiprocessing pool. Draws a sample of size n from
-        each class
-
-        :param int n: number of observations to draw with replacement per class sampled
-          from data
-        :return np.ndarray: n features x 2 array with columns of U-scores and z-scores
+        :param np.ndarray xy:
+        :param int n: the size of group x
+        :return np.ndarray:
         """
-
-        complete_data = cls.get_shared_data()
-        array_splits = cls.get_shared_splits()
-        assert array_splits.shape[0] == 1  # only have two classes
-        xy = cls._draw_sample_with_replacement(complete_data, n, array_splits)
-        # calculate U for x
         if xy.ndim == 1:
             xy = xy[:, np.newaxis]
         ranks = rankdata(xy, axis=0)
@@ -78,6 +69,24 @@ class MannWhitneyU(differential_expression.DifferentialExpression):
         z[sigsq == 0] = 0
 
         return np.vstack([u, z]).T
+
+    @classmethod
+    def mwu_map(cls, n):
+        """Mann-Whitney U-test between classes defind by global variables data and splits
+
+        Designed to be mapped to a multiprocessing pool. Draws a sample of size n from
+        each class
+
+        :param int n: number of observations to draw with replacement per class sampled
+          from data
+        :return np.ndarray: n features x 2 array with columns of U-scores and z-scores
+        """
+
+        complete_data = cls.get_shared_data()
+        array_splits = cls.get_shared_splits()
+        assert array_splits.shape[0] == 1  # only have two classes
+        xy = cls._draw_sample_with_replacement(complete_data, n, array_splits)
+        return cls.mwu(xy, n)
 
     def mwu_reduce(self, results, alpha=0.05):
         """

@@ -5,6 +5,7 @@ import multiprocessing
 from contextlib import closing
 from functools import partial
 from statsmodels.sandbox.stats.multicomp import multipletests
+from scipy.stats.mstats import mannwhitneyu
 
 
 def _binomial_test(gamma, Ng, N, n_choose_k):
@@ -92,3 +93,23 @@ class BinomialTest:
         is_a = self.labels == a
         is_b = self.labels == b
         return kartik_test(self.data.loc[is_a, :], self.data.loc[is_b, :])
+
+
+class MannWhitneyU:
+
+    def __init__(self, data, labels):
+        # library size normalize data
+        self.data = data.div(data.sum(axis=1), axis=0)
+        self.labels = labels
+        if np.unique(labels).shape[0] != 2:
+            raise ValueError('Mann Whitney U can only be applied to two groups')
+
+    def fit(self):
+        a, b = np.unique(self.labels)
+        is_a = self.labels == a
+        is_b = self.labels == b
+        results = []
+        for c in self.data.columns:
+            results.append(mannwhitneyu(self.data.loc[is_a, c], self.data.loc[is_b, c]))
+
+        return pd.DataFrame(np.vstack(results), index=self.data.columns, columns=['U', 'p'])
