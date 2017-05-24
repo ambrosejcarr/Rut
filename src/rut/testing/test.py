@@ -361,9 +361,9 @@ class TestGenerate(unittest.TestCase):
 
     @unittest.skip('takes 60s to run on test data, fails due to small gene number')
     def test_synthetic_scde(self):
-        mast_script = '~/projects/RutR/R/runSCDE.R'
+        scde_script = '~/projects/RutR/R/runSCDE.R'
         results_filename = self.tmpdir + 'test_synthetic_SCDE_results.csv'  # this will fail unless has 2000 genes
-        res = self.synth.test_method(mast_script, results_filename)
+        res = self.synth.test_method(scde_script, results_filename)
         print(res)
 
     def test_synthetic_mwu(self):
