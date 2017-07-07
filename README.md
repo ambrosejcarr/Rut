@@ -1,5 +1,12 @@
 # RUT
-Resampled U-Test for non-parametric comparison of two or more distributions with unequal sampling and variance
+Sampling framework to enable comparison of means or medians of two samples whose characteristics break IID assumptions required for existing methods to generate valid results. Currently implements several such tests:
+
+1. Mann-Whitney U
+2. Wilcoxon Behrens Fisher
+3. Welch's T
+4. KruskalWallis ANOVA
+
+In addition, the same method can be used to generate a distance matrix between clusters whose sampling rates differ. This package implements a method of calculating a distance matrix which can be used with the Phenograph clustering method.  
  
 # Installation
 
@@ -8,23 +15,18 @@ cd Rut
 python3 setup.py install
 ```
 
-If sklearn installation causes problems (they have odd naming conventions for their packages), first install sklearn from git:
+If sklearn installation causes problems, first install sklearn from git:
 
 `pip3 install git+git://github.com/scikit-learn/scikit-learn.git@master`
 
-# usage
+# Usage and Documentation
 
 ```
 > ipython  # use ipython environment for interactive documentation
-> import Rut
-> ?rut.mannwhitneyu
-> ?rut.kruskalwallis
+> import rut
+> ?rut.differential_expression.MannWhitneyU
+> ?rut.differential_expression.KruskalWallis
+> ?rut.differential_expression.WilcoxonBF
+> ?rut.differential_expression.WelchsT
 > ?rut.cluster
 ```
-
-# memory requirements
-In almost all cases the default parameters should work on a machine with 32gb RAM. I am in the process of reducing the RAM usage by leveraging shared memory modules. The memory usage (and run time) scales with the both the number of cells and genes measured, since I designed this test to process all genes at once in each sample. The former (cells) is by default restricted to be 500 or less by the max_obs_per_sample parameter. I don't suggest increasing this.  
-
-pre-running the kruskal-wallis ANOVA across all your groups is a good way to reduce the memory overhead of the following mann-whitney tests (I typically throw out any gene with q > 0.1). 
-
-In addition to the DE tests and the clustering method, there is also an in-development module `score_features` that will return gene set scores (expression sums) across normalized samples from two or more sets of cells. 

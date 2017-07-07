@@ -5,21 +5,27 @@ from statsmodels.sandbox.stats.multicomp import multipletests
 from scipy.stats.mstats import count_tied_groups, rankdata
 import rut.misc
 from rut.differential_expression import differential_expression
+from rut.sample import Sampled
 
 
-class MannWhitneyU(differential_expression.DifferentialExpression):
+class MannWhitneyU(Sampled, differential_expression.DifferentialExpression):
+    """
+    Mann-Whitney U test over down-sampled data from two groups of cells.
+    """
 
     def __init__(self, *args, **kwargs):
         """
 
         :param pd.DataFrame | np.array data: m observations x p features array or
           dataframe
-        :param np.ndarray labels:  condition labels that separate cells into units of
-          comparison
-        :param bool is_sorted: if True, no sorting is done of data or labels
+        :param np.ndarray labels: m x 1 condition labels that separate cells into groups
+          of comparison
+        :param bool is_sorted: if True, the dataframe index is assumed to be pre-sorted
+          based on the provided labels. No additional sorting is done of data or labels
         :param int max_obs_per_sample: hard ceiling on the number of observations to
-          take for each sample. Useful for constraining memory usage
-
+          take for each sample. Useful for constraining memory usage for very large
+          groups. More than 1000 observations in the smallest group can use > 2gb memory
+          per process. Default = 500.
         """
         super().__init__(*args, **kwargs)
         if self._labels is None:
@@ -71,7 +77,7 @@ class MannWhitneyU(differential_expression.DifferentialExpression):
         return np.vstack([u, z]).T
 
     @classmethod
-    def mwu_map(cls, n):
+    def map(cls, n):
         """Mann-Whitney U-test between classes defind by global variables data and splits
 
         Designed to be mapped to a multiprocessing pool. Draws a sample of size n from
@@ -88,7 +94,7 @@ class MannWhitneyU(differential_expression.DifferentialExpression):
         xy = cls._draw_sample_with_replacement(complete_data, n, array_splits)
         return cls.mwu(xy, n)
 
-    def mwu_reduce(self, results, alpha=0.05):
+    def reduce(self, results, alpha=0.05):
         """
         reduction function for Mann-Whitney U-test that processes the results from
         mw_map into a results object
@@ -125,16 +131,25 @@ class MannWhitneyU(differential_expression.DifferentialExpression):
         return results
 
     def fit(self, n_iter=50, n_processes=None, alpha=0.05):
-        """
-        Carry out a Mann-Whitney U-test
+        """Calculate a bootstrapped Mann-Whitney U-test
 
-        :return:
+        :param int n_iter: number of sampling iterations to run
+        :param int n_processes: number of processes to use in the pool (default = number
+          available to runtime environment)
+        :param float alpha: allowable type-I error
+        :return pd.DataFrame: contains:
+          U: test statistic of M-W U-test
+          z_approx: median z-score across iterations
+          z_lo: 2.5% confidence boundary for z-score
+          z_hi: 97.5% confidence boundary for z-score
+          p: p-value corresponding to z_approx
+          q: fdr-corrected q-value corresponding to p, across tests in results
         """
         self.result_ = self.run(
             n_iter=n_iter,
             n_processes=n_processes,
-            fmap=self.mwu_map,
-            freduce=self.mwu_reduce,
+            fmap=self.map,
+            freduce=self.reduce,
             freduce_kwargs=dict(alpha=alpha)
         )
 
