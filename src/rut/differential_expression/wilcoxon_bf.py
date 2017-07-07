@@ -4,16 +4,20 @@ from scipy.stats.mstats import count_tied_groups, rankdata
 from rut.differential_expression import differential_expression
 import rut.misc
 import pandas as pd
+from rut.sample import Sampled
 
 
-class WilcoxonBF(differential_expression.DifferentialExpression):
+class WilcoxonBF(Sampled, differential_expression.DifferentialExpression):
+    """
+    Wilcoxon BF-test over down-sampled data from two groups of cells.
+    """
 
     def __init__(self, *args, **kwargs):
         """
 
         :param pd.DataFrame | np.array data: m observations x p features array or
           dataframe
-        :param np.ndarray labels:  condition labels that separate cells into units of
+        :param np.ndarray labels: p x 1 condition labels that separate cells into units of
           comparison
         :param bool is_sorted: if True, no sorting is done of data or labels
         :param int max_obs_per_sample: hard ceiling on the number of observations to
@@ -30,7 +34,7 @@ class WilcoxonBF(differential_expression.DifferentialExpression):
 
     # todo determine if statistic's t-approximation is necessary to implement (large n)
     @classmethod
-    def _map(cls, n):
+    def map(cls, n):
         """
         Wilcoxon Behrens-Fisher test between classes defind by global variables data
         and splits
@@ -45,7 +49,7 @@ class WilcoxonBF(differential_expression.DifferentialExpression):
         """
 
         def empirical_variance(within_rank, total_rank, mean_total_rank, n, N):
-            """
+            """calculate the empirical variance of the sample
 
             :param np.ndarray within_rank: n samples x g genes within-sample ranks
             :param np.ndarray total_rank: n samples x g genes between-sample ranks
@@ -62,6 +66,13 @@ class WilcoxonBF(differential_expression.DifferentialExpression):
             return sigma2
 
         def wbf(xy, n_x, n_y):
+            """calculate the wbf test statistic
+
+            :param np.ndarray xy: concatenated data for x and y
+            :param int n_x: number of observations of x
+            :param int n_y: number of observations of y
+            :return:
+            """
             x_ranks = rankdata(xy[:n_x, :], axis=0)
             y_ranks = rankdata(xy[n_x:, :], axis=0)
             N = n_x + n_y
@@ -85,7 +96,7 @@ class WilcoxonBF(differential_expression.DifferentialExpression):
         # calculate test statistic
         return wbf(xy, n, n)  # n_x and n_y are both equal to the sampling size
 
-    def _reduce(self, results, alpha=0.05):
+    def reduce(self, results, alpha=0.05):
         """
         reduction function for Wilcoxon Behrens-Fisher test that processes the results
         from self._map into a results object
@@ -95,18 +106,16 @@ class WilcoxonBF(differential_expression.DifferentialExpression):
         :param float alpha: acceptable type-I error rate for BY (negative) FDR correction
 
         :return pd.DataFrame: contains:
-          U: test statistic of M-W U-test
-          z_approx: median z-score across iterations
-          z_lo: 2.5% confidence boundary for z-score
-          z_hi: 97.5% confidence boundary for z-score
-          p: p-value corresponding to z_approx
+          W: test statistic of WBF test
+          W_low: 2.5% confidence boundary for W
+          W_high: 97.5% confidence boundary for W
+          p: p-value corresponding to W
           q: fdr-corrected q-value corresponding to p, across tests in results
         """
 
         results = np.stack(results)
         results[np.isnan(results)] = 0  # todo fix this
         ci = rut.misc.confidence_interval(results)
-        # p = rut.misc.z_to_p(results.sum(axis=0) / np.sqrt(results.shape[0]))[:, None]
         results = pd.DataFrame(
             data=np.concatenate([np.mean(results, axis=0)[:, None], ci], axis=1),
             index=self._features,
@@ -124,13 +133,18 @@ class WilcoxonBF(differential_expression.DifferentialExpression):
         """
         Carry out a Behrens-Fisher test
 
-        :return:
+        :return pd.DataFrame: contains:
+          W: test statistic of WBF test
+          W_low: 2.5% confidence boundary for W
+          W_high: 97.5% confidence boundary for W
+          p: p-value corresponding to W
+          q: fdr-corrected q-value corresponding to p, across tests in results
         """
         self.result_ = self.run(
             n_iter=n_iter,
             n_processes=n_processes,
-            fmap=self._map,
-            freduce=self._reduce,
+            fmap=self.map,
+            freduce=self.reduce,
             freduce_kwargs=dict(alpha=alpha)
         )
         return self.result_
@@ -139,5 +153,5 @@ class WilcoxonBF(differential_expression.DifferentialExpression):
         self._proc_init()
         results = []
         for i in np.arange(n_iter):
-            results.append(self._map(self.n_samples_to_draw))
-        return self._reduce(results, alpha=alpha)
+            results.append(self.map(self.n_samples_to_draw))
+        return self.reduce(results, alpha=alpha)

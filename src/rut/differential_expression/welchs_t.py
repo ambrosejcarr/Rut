@@ -1,19 +1,23 @@
 import numpy as np
 from statsmodels.sandbox.stats.multicomp import multipletests
-from scipy.stats.mstats import count_tied_groups, rankdata
 from rut.differential_expression import differential_expression
 import rut.misc
 import pandas as pd
+from rut.sample import Sampled
 
 
-class WelchsT(differential_expression.DifferentialExpression):
+class WelchsT(Sampled, differential_expression.DifferentialExpression):
+    """
+    Welch's T-test test over down-sampled data from two groups of cells.
+    """
+
 
     def __init__(self, *args, **kwargs):
         """
 
         :param pd.DataFrame | np.array data: m observations x p features array or
           dataframe
-        :param np.ndarray labels:  condition labels that separate cells into units of
+        :param np.ndarray labels: m x 1 condition labels that separate cells into units of
           comparison
         :param bool is_sorted: if True, no sorting is done of data or labels
         :param int max_obs_per_sample: hard ceiling on the number of observations to
@@ -28,9 +32,8 @@ class WelchsT(differential_expression.DifferentialExpression):
                 'Labels must contain only two categories for WelchsT testing. '
                 'Please use KruskalWallis for poly-sample comparisons')
 
-    # todo determine if statistic's t-approximation is necessary to implement (large n)
     @classmethod
-    def _map(cls, n):
+    def map(cls, n):
         """
         Welch's T-test test between classes defind by global variables data
         and splits
@@ -63,7 +66,7 @@ class WelchsT(differential_expression.DifferentialExpression):
         # calculate test statistic
         return wtt(xy[:n, :], xy[n:, :], n, n)  # samples are always size n
 
-    def _reduce(self, results, alpha=0.05):
+    def reduce(self, results, alpha=0.05):
         """
         reduction function for Welch's T-test test that processes the results
         from self._map into a results object
@@ -73,11 +76,10 @@ class WelchsT(differential_expression.DifferentialExpression):
         :param float alpha: acceptable type-I error rate for BY (negative) FDR correction
 
         :return pd.DataFrame: contains:
-          U: test statistic of M-W U-test
-          z_approx: median z-score across iterations
-          z_lo: 2.5% confidence boundary for z-score
-          z_hi: 97.5% confidence boundary for z-score
-          p: p-value corresponding to z_approx
+          t: median z-score across iterations
+          t_low: 2.5% confidence boundary for t-score
+          t_high: 97.5% confidence boundary for t-score
+          p: p-value corresponding to t
           q: fdr-corrected q-value corresponding to p, across tests in results
         """
 
@@ -99,16 +101,25 @@ class WelchsT(differential_expression.DifferentialExpression):
         return results
 
     def fit(self, n_iter=50, n_processes=None, alpha=0.05):
-        """
-        Carry out a Welch's T-test
+        """Calculate a bootstrapped Welch's T-test
 
-        :return:
+        :param int n_iter: number of sampling iterations to run
+        :param int n_processes: number of processes to use in the pool (default = number
+          available to runtime environment)
+        :param float alpha: allowable type-I error
+
+        :return pd.DataFrame: contains:
+          t: median z-score across iterations
+          t_low: 2.5% confidence boundary for t-score
+          t_high: 97.5% confidence boundary for t-score
+          p: p-value corresponding to t
+          q: fdr-corrected q-value corresponding to p, across tests in results
         """
         self.result_ = self.run(
             n_iter=n_iter,
             n_processes=n_processes,
-            fmap=self._map,
-            freduce=self._reduce,
+            fmap=self.map,
+            freduce=self.reduce,
             freduce_kwargs=dict(alpha=alpha)
         )
         return self.result_
@@ -117,5 +128,5 @@ class WelchsT(differential_expression.DifferentialExpression):
         self._proc_init()
         results = []
         for i in np.arange(n_iter):
-            results.append(self._map(self.n_samples_to_draw))
-        return self._reduce(results, alpha=alpha)
+            results.append(self.map(self.n_samples_to_draw))
+        return self.reduce(results, alpha=alpha)

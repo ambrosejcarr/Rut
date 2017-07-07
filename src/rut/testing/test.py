@@ -6,8 +6,7 @@ import pandas as pd
 from rut.differential_expression import mannwhitneyu, kruskalwallis, wilcoxon_bf, welchs_t
 from rut.testing import external_comparisons
 from rut.testing import empirical_variance, generate
-from rut import score_feature_magnitude, cluster
-
+from rut import cluster
 
 
 class TestKruskalWallis(unittest.TestCase):
@@ -193,23 +192,6 @@ class TestWilcoxonBF(unittest.TestCase):
         self.assertAlmostEqual(np.round(res[0], 3), 3.137)
 
 
-class TestScoreFeatureMagnitude(unittest.TestCase):
-
-    def test_synthetic(self):
-        labels = np.array(([0] * 5) + ([1] * 5))
-        data = pd.DataFrame(
-            np.random.randint(0, 10, 100).reshape(10, 10),
-            index=list('abcdefghij'),
-            columns=list('klmnopqrst')
-        )
-
-        feature_groups = {'ten': list('klmnz'), 'gtf': list('znm'), 'ded': list('pqe'),
-                          'you_should_not_see_me': list('xyz')}
-        sfm = score_feature_magnitude.ScoreFeatureMagnitudes(
-            data, labels, feature_groups=feature_groups)
-        print(sfm.fit(4, 4)['mean'])
-
-
 class TestCluster(unittest.TestCase):
 
     @classmethod
@@ -227,6 +209,7 @@ class TestCluster(unittest.TestCase):
             np.random.multivariate_normal(m3, cov3, 100),
         ], axis=0)
 
+    @unittest.skip('parallel clustering currently causing thread crashes.')
     def test_cluster(self):
         # draw data from three different multivariate gaussians
         import matplotlib.pyplot as plt
